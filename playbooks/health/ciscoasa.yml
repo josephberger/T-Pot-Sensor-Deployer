@@ -1,0 +1,11 @@
+---
+# ciscoasa health check. Run against the relocated admin SSH port (-e ansible_port=64295).
+- name: Check T-Pot ciscoasa sensor
+  hosts: all
+  become: true
+  vars_files: [../defaults.yml]
+  vars:
+    honeypot_containers: [ciscoasa]
+    honeypot_ports: [8443]
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/health_base.yml

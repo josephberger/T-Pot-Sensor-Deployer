@@ -1,0 +1,54 @@
+---
+# Heralding: credential catcher (POP3, IMAP, SOCKS, PostgreSQL, VNC, ...).
+# Generated from T-Pot's compose/tpot_services.yml and docker/elk/logstash/dist/http_output.conf (T-Pot 24.04).
+# Usage (normally invoked by the deployer):
+#   ansible-playbook -i IP, playbooks/sensors/heralding.yml -e @vars.json
+- name: Deploy T-Pot heralding sensor
+  hosts: all
+  become: true
+  vars_files: [../defaults.yml]
+  vars:
+    sensor_type: heralding
+    honeypot_dirs:
+      - /data/heralding/log
+    honeypot_networks: [heralding_local]
+    # This sensor's slice of T-Pot's log pipeline.
+    logstash_inputs:
+      - { path: /data/heralding/log/auth.csv, type: Heralding, codec: plain }
+    logstash_filter: |
+      if [type] == "Heralding" {
+        csv {
+          columns => ["timestamp","auth_id","session_id","src_ip","src_port","dest_ip","dest_port","proto","username","password"] separator => ","
+        }
+        date {
+          match => [ "timestamp", "yyyy-MM-dd HH:mm:ss.SSSSSS" ]
+          remove_field => ["timestamp"]
+        }
+      }
+    honeypot_services: |
+      heralding:
+        container_name: heralding
+        restart: always
+        depends_on:
+          tpotinit:
+            condition: service_healthy
+        tmpfs:
+        - /tmp/heralding:uid=2000,gid=2000
+        networks:
+        - heralding_local
+        ports:
+        - 110:110
+        - 143:143
+        - 465:465
+        - 993:993
+        - 995:995
+        - 1080:1080
+        - 5432:5432
+        - 5900:5900
+        image: {{ tpot_repo }}/heralding:{{ tpot_version }}
+        pull_policy: always
+        read_only: true
+        volumes:
+        - /data/heralding/log:/var/log/heralding
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/sensor_base.yml

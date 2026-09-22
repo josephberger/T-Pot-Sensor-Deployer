@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Campaigns{% endblock %}
+
+{% block content %}
+        <div id="section-campaigns" class="rounded-xl bg-[#0f172a] border border-slate-800 shadow-lg overflow-hidden scroll-mt-28">
+            <div class="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-800/80 bg-[#121c32]/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-clock-rotate-left text-slate-400"></i>
+                    <h2 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <span>Campaigns</span>
+                        <i class="fa-regular fa-circle-question tip-icon" data-tip="A campaign runs a sensor for a while, destroys it, waits, and rebuilds it on a fresh IP address. Scanners like Shodan and Censys then can't build a history of one fixed address. Reserved IPs are never used."></i>
+                    </h2>
+                </div>
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <button type="button" onclick="openModal('create-schedule-modal')" class="flex-1 sm:flex-none px-3 py-2 text-xs font-semibold rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold transition-all flex items-center justify-center gap-1.5 min-h-[36px] shadow">
+                        <i class="fa-solid fa-plus text-[10px]"></i> New campaign
+                    </button>
+                    <button type="button" onclick="loadSchedules()" class="p-2 text-xs text-slate-400 hover:text-white rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 transition-colors min-w-[38px] min-h-[38px] flex items-center justify-center" title="Refresh Schedules">
+                        <i class="fa-solid fa-rotate"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="p-4 sm:p-6 space-y-4">
+                <!-- Schedules Grid -->
+                <div id="schedules-list" class="grid grid-cols-1 lg:grid-cols-2 gap-3.5 sm:gap-4">
+                    <!-- Populated dynamically via JS -->
+                </div>
+
+                <!-- Empty State -->
+                <div id="schedules-empty-state" class="hidden text-center py-6 sm:py-8 border border-dashed border-slate-800 rounded-xl bg-slate-900/20 px-3">
+                    <i class="fa-solid fa-calendar-xmark text-2xl sm:text-3xl text-slate-600 mb-2"></i>
+                    <p class="text-xs sm:text-sm font-semibold text-slate-400">No campaigns yet</p>
+                    <p class="text-[11px] sm:text-xs text-slate-500 mt-1">Start from a preset, or use New campaign for full control.</p>
+                    <div class="flex items-center justify-center flex-wrap gap-2 mt-3 sm:mt-4">
+                        <button onclick="createPresetSchedule('weekly_24h')" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all min-h-[32px]" data-tip="Cowrie runs for 24 hours, then is rebuilt a week later on a new IP.">
+                            Weekly, 24 h
+                        </button>
+                        <button onclick="createPresetSchedule('shift_8h_random')" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all min-h-[32px]" data-tip="Cowrie runs 8 hours, then is rebuilt after a random 48 to 72 hour gap, in a different region each time.">
+                            8 h shift, random rebuild
+                        </button>
+                        <button onclick="createPresetSchedule('daily_6h')" class="px-3 py-1.5 text-xs rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all min-h-[32px]" data-tip="Cowrie runs 6 hours a day during busy scanning hours, on a fresh IP each day.">
+                            Daily, 6 h
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+{% endblock %}

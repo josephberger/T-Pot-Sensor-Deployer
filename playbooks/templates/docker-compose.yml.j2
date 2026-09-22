@@ -1,0 +1,41 @@
+# Managed by tpot-sensor-deployer ({{ sensor_type }} sensor). Do not edit by hand.
+networks:
+{% for n in honeypot_networks | default([]) %}
+  {{ n }}:
+{% endfor %}
+{% if not honeypot_networks | default([]) %}
+  default:
+{% endif %}
+services:
+  tpotinit:
+    container_name: tpotinit
+    env_file: [.env]
+    restart: always
+    network_mode: host
+    cap_add: [NET_ADMIN]
+    image: {{ tpot_repo }}/tpotinit:{{ tpot_version }}
+    pull_policy: always
+    volumes:
+      - /opt/tpotce/docker-compose.yml:/tmp/tpot/docker-compose.yml:ro
+      - /data/blackhole:/etc/blackhole
+      - /data:/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+  logstash:
+    container_name: logstash
+    restart: always
+    depends_on: { tpotinit: { condition: service_healthy } }
+    environment:
+      - LS_JAVA_OPTS=-Xms{{ logstash_heap }} -Xmx{{ logstash_heap }}
+      - TPOT_TYPE=SENSOR
+      - TPOT_HIVE_USER={{ tpot_hive_user }}
+      - TPOT_HIVE_IP={{ hive_ip }}
+      - LS_SSL_VERIFICATION={{ ssl_verification }}
+      - MY_HOSTNAME={{ sensor_name }}
+    ports: ["127.0.0.1:64305:64305"]
+    mem_limit: {{ logstash_mem_limit }}
+    image: {{ tpot_repo }}/logstash:{{ tpot_version }}
+    pull_policy: always
+    volumes:
+      - /data:/data
+      - /opt/tpotce/logstash/http_output.conf:/etc/logstash/http_output.conf:ro
+{{ honeypot_services | indent(2, true) }}

@@ -1,0 +1,109 @@
+# Managed by tpot-sensor-deployer ({{ sensor_type }} sensor). Do not edit by hand.
+#
+# Trimmed from T-Pot's stock http_output.conf. The stock file is one pipeline for ALL honeypots (28 file
+# inputs, 31 mutate + 28 date filters, IP-reputation dictionaries) because the Hive runs every honeypot.
+# A single sensor only needs its own inputs and filters. IP reputation (ip_rep) is not added here: the
+# sensor only records what happens, the Hive is the SIEM.
+input {
+{% for i in logstash_inputs %}
+  file {
+    path => ["{{ i.path }}"]
+    codec => {{ i.codec | default('json') }}
+    type => "{{ i.type }}"
+  }
+{% endfor %}
+}
+
+filter {
+{{ logstash_filter }}
+
+# Drop if parse fails
+if "_grokparsefailure" in [tags] { drop {} }
+if "_jsonparsefailure" in [tags] { drop {} }
+
+# Add T-Pot hostname and external IP
+  mutate {
+    add_field => {
+      "t-pot_ip_ext" => "${MY_EXTIP}"
+      "t-pot_ip_int" => "${MY_INTIP}"
+      "t-pot_hostname" => "${MY_HOSTNAME}"
+    }
+  }
+
+# Add geo coordinates / ASN info / IP rep.
+  if [src_ip] {
+    geoip {
+      cache_size => 10000
+      source => "src_ip"
+      default_database_type => "City"
+#      database => "/usr/share/logstash/vendor/bundle/jruby/2.6.0/gems/logstash-filter-geoip-7.2.13-java/vendor/GeoLite2-City.mmdb"
+    }
+    geoip {
+      cache_size => 10000
+      source => "src_ip"
+      default_database_type => "ASN"
+#      database => "/usr/share/logstash/vendor/bundle/jruby/2.6.0/gems/logstash-filter-geoip-7.2.13-java/vendor/GeoLite2-ASN.mmdb"
+    }
+  }
+  if [t-pot_ip_ext]  {
+    geoip {
+      cache_size => 10000
+      source => "t-pot_ip_ext"
+      target => "geoip_ext"
+      default_database_type => "City"
+#      database => "/usr/share/logstash/vendor/bundle/jruby/2.6.0/gems/logstash-filter-geoip-7.2.13-java/vendor/GeoLite2-City.mmdb"
+    }
+    geoip {
+      cache_size => 10000
+      source => "t-pot_ip_ext"
+      target => "geoip_ext"
+      default_database_type => "ASN"
+#      database => "/usr/share/logstash/vendor/bundle/jruby/2.6.0/gems/logstash-filter-geoip-7.2.13-java/vendor/GeoLite2-ASN.mmdb"
+    }
+  }
+
+# In some rare conditions dest_port, src_port, status are indexed as string, forcing integer for now
+  if [dest_port] {
+    mutate {
+        convert => { "dest_port" => "integer" }
+    }
+  }
+  if [src_port] {
+    mutate {
+        convert => { "src_port" => "integer" }
+    }
+  }
+  if [status] {
+    mutate {
+        convert => { "status" => "integer" }
+    }
+  }
+  if [id] {
+    mutate {
+        convert => { "id" => "string" }
+    }
+  }
+  if [request] {
+    mutate {
+        convert => { "request" => "string" }
+    }
+  }
+}
+
+# Output section
+output {
+    http {
+      http_method => "post"
+      http_compression => true
+      id => "${MY_HOSTNAME}"
+      codec => "json"
+      format => "json_batch"
+      url => "https://${TPOT_HIVE_IP}:64294"
+#      cacert => "/data/hive.crt"
+      ssl_verification_mode => "${LS_SSL_VERIFICATION}"
+      ssl_certificate_authorities => "/data/hive.crt"
+      headers => {
+        "Authorization" => "Basic ${TPOT_HIVE_USER}"
+      }
+    }
+}

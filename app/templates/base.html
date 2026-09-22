@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-[#080d1a] text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Dashboard{% endblock %} - T-Pot Deployer</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Cpath fill=%27%2322d3ee%27 d=%27M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3z%27/%3E%3C/svg%3E">
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome 6 -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>
+        /* Theme init runs before paint so there is no flash. "unicorn" is the only alternate theme. */
+        (function () {
+            try {
+                if (localStorage.getItem('theme') === 'unicorn') {
+                    document.documentElement.setAttribute('data-theme', 'unicorn');
+                    var base = location.pathname.indexOf('/sensors') === 0 ? '/sensors' : '';
+                    document.write('<link rel="stylesheet" id="theme-css" href="' + base + '/static/theme-unicorn.css">');
+                }
+            } catch (e) {}
+        })();
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        pre, code, .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .terminal-box {
+            background-color: #050811;
+            border: 1px solid #1e293b;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #090d16;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e293b;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #334155;
+        }
+        /* Lightweight tooltips: <el data-tip="text">. Add data-tip-left to anchor to the right edge. */
+        [data-tip] { position: relative; }
+        [data-tip]:hover::after, [data-tip]:focus-visible::after {
+            content: attr(data-tip); position: absolute; z-index: 60; top: calc(100% + 6px); left: 50%;
+            transform: translateX(-50%); width: max-content; max-width: 260px; padding: 6px 9px; border-radius: 6px;
+            background: #0b1220; border: 1px solid #334155; color: #cbd5e1; font: 400 11px/1.4 Inter, sans-serif;
+            text-transform: none; letter-spacing: 0; white-space: normal; text-align: left; pointer-events: none;
+            box-shadow: 0 6px 18px rgba(0,0,0,.5);
+        }
+        [data-tip][data-tip-left]:hover::after { left: auto; right: 0; transform: none; }
+        .tip-icon { color: #64748b; font-size: 11px; cursor: help; margin-left: 6px; }
+        .tip-icon:hover { color: #94a3b8; }
+        @keyframes pulse-fast {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .4; }
+        }
+        .animate-pulse-fast {
+            animation: pulse-fast 1.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+    </style>
+</head>
+<body class="min-h-full flex flex-col bg-[#080d1a]">
+
+    <!-- Top Header Bar -->
+    <header class="border-b border-slate-800/80 bg-[#0c121e]/90 backdrop-blur-md sticky top-0 z-30">
+        <div class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-2 sm:gap-4">
+            <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+                <a href="#" data-app-path="/" class="flex items-center gap-2 sm:gap-3 group">
+                    <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-slate-800/80 border border-slate-700/60 flex items-center justify-center text-base text-cyan-400 shrink-0 group-hover:border-cyan-500/50 transition-colors">
+                        <i class="fa-solid fa-shield-halved"></i>
+                    </div>
+                    <div class="truncate">
+                        <h1 class="text-xs sm:text-sm font-bold text-white tracking-wider font-mono uppercase flex items-center gap-1.5 sm:gap-2">
+                            <span>T-POT DEPLOYER</span>
+                        </h1>
+                        <p class="text-[10px] sm:text-xs text-slate-400 font-mono hidden sm:block">Honeypot sensor fleet</p>
+                    </div>
+                </a>
+            </div>
+
+            <div class="flex items-center gap-1.5 sm:gap-3 shrink-0">
+                <!-- Hive Status Badge -->
+                <div id="hive-status-badge" class="px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1 sm:gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-slate-500 shrink-0"></span>
+                    <span class="hidden sm:inline">Detecting Hive...</span>
+                    <span class="sm:hidden font-mono">Hive</span>
+                </div>
+
+                <!-- DO Status Badge -->
+                <div id="do-status-badge" class="px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1 sm:gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-slate-500 shrink-0"></span>
+                    <span class="hidden sm:inline">Checking DO...</span>
+                    <span class="sm:hidden font-mono">DO</span>
+                </div>
+
+                <!-- Dedicated Worker Status Badge -->
+                <div id="worker-header-badge" onclick="navigateTo('/tasks')" class="px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1 sm:gap-1.5 cursor-pointer hover:border-slate-600 transition-colors shrink-0" title="Click to view Dedicated Workers &amp; Queue Status">
+                    <span class="w-2 h-2 rounded-full bg-slate-500 shrink-0"></span>
+                    <span class="hidden sm:inline">Checking Workers...</span>
+                    <span class="sm:hidden font-mono">Workers</span>
+                </div>
+
+                <!-- Settings Button -->
+                <button onclick="openModal('settings-modal')" class="p-2 min-w-[36px] min-h-[36px] rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 text-slate-300 hover:text-white transition-colors flex items-center justify-center shrink-0" title="Settings &amp; Credentials">
+                    <i class="fa-solid fa-gear"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Unified Main Tab Navigation Bar (Sticky on all screens) -->
+    <nav class="sticky top-16 z-20 bg-[#0c121e]/95 backdrop-blur-md border-b border-slate-800 shadow-md">
+        <div class="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8 py-2 flex items-center justify-between gap-1 sm:gap-2 overflow-x-auto scrollbar-none">
+            <div class="flex items-center gap-1 sm:gap-1.5 w-full sm:w-auto">
+                <a href="#" data-app-path="/" id="maintab-dashboard" class="maintab-btn flex-1 sm:flex-none py-1.5 px-2.5 sm:px-3 text-center text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 shrink-0 min-h-[34px] {% if active_page == 'dashboard' %}bg-cyan-950/80 text-cyan-300 border border-cyan-800/80 shadow-sm{% else %}bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-transparent{% endif %}">
+                    <i class="fa-solid fa-gauge-high text-[11px]"></i> <span>Dashboard</span>
+                </a>
+                <a href="#" data-app-path="/deploy" id="maintab-deploy" class="maintab-btn flex-1 sm:flex-none py-1.5 px-2.5 sm:px-3 text-center text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 shrink-0 min-h-[34px] {% if active_page == 'deploy' %}bg-cyan-950/80 text-cyan-300 border border-cyan-800/80 shadow-sm{% else %}bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-transparent{% endif %}">
+                    <i class="fa-solid fa-rocket text-[11px]"></i> <span>Deploy</span>
+                </a>
+                <a href="#" data-app-path="/campaigns" id="maintab-campaigns" class="maintab-btn flex-1 sm:flex-none py-1.5 px-2.5 sm:px-3 text-center text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 shrink-0 min-h-[34px] {% if active_page == 'campaigns' %}bg-cyan-950/80 text-cyan-300 border border-cyan-800/80 shadow-sm{% else %}bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-transparent{% endif %}">
+                    <i class="fa-solid fa-clock-rotate-left text-[11px]"></i> <span>Campaigns</span>
+                </a>
+                <a href="#" data-app-path="/fleet" id="maintab-fleet" class="maintab-btn flex-1 sm:flex-none py-1.5 px-2.5 sm:px-3 text-center text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 shrink-0 min-h-[34px] {% if active_page == 'fleet' %}bg-cyan-950/80 text-cyan-300 border border-cyan-800/80 shadow-sm{% else %}bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-transparent{% endif %}">
+                    <i class="fa-solid fa-list-check text-[11px]"></i> <span>Fleet</span>
+                </a>
+                <a href="#" data-app-path="/edl" id="maintab-edl" class="maintab-btn flex-1 sm:flex-none py-1.5 px-2.5 sm:px-3 text-center text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 shrink-0 min-h-[34px] {% if active_page == 'edl' %}bg-cyan-950/80 text-cyan-300 border border-cyan-800/80 shadow-sm{% else %}bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-transparent{% endif %}">
+                    <i class="fa-solid fa-shield-halved text-[11px]"></i> <span>EDL</span>
+                </a>
+                <a href="#" data-app-path="/tasks" id="maintab-tasks" class="maintab-btn flex-1 sm:flex-none py-1.5 px-2.5 sm:px-3 text-center text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 shrink-0 min-h-[34px] {% if active_page == 'tasks' %}bg-cyan-950/80 text-cyan-300 border border-cyan-800/80 shadow-sm{% else %}bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-transparent{% endif %}">
+                    <i class="fa-solid fa-layer-group text-[11px]"></i> <span>Tasks</span>
+                    <span id="tab-tasks-badge" class="px-1.5 py-0.2 text-[10px] font-mono rounded bg-slate-700/60 text-slate-300 border border-slate-600">0</span>
+                </a>
+                <a href="#" data-app-path="/admin" id="maintab-admin" class="maintab-btn flex-1 sm:flex-none py-1.5 px-2.5 sm:px-3 text-center text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 shrink-0 min-h-[34px] {% if active_page == 'admin' %}bg-cyan-950/80 text-cyan-300 border border-cyan-800/80 shadow-sm{% else %}bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-transparent{% endif %}">
+                    <i class="fa-solid fa-gear text-[11px]"></i> <span>Admin</span>
+                </a>
+                <a href="#" data-app-path="/static/help.html" id="maintab-help" class="maintab-btn flex-1 sm:flex-none py-1.5 px-2.5 sm:px-3 text-center text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 shrink-0 min-h-[34px] bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 border border-transparent">
+                    <i class="fa-regular fa-circle-question text-[11px]"></i> <span>Help</span>
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Missing Token Alert Banner (Hidden when token present) -->
+    <div id="token-missing-banner" class="hidden bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border-b border-amber-500/30 px-3 sm:px-4 py-2.5 sm:py-3">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs sm:text-sm">
+            <div class="flex items-center gap-2 sm:gap-3 text-amber-300">
+                <i class="fa-solid fa-triangle-exclamation text-sm sm:text-base shrink-0"></i>
+                <span>DigitalOcean API token is not yet configured. Set it now to activate deployment.</span>
+            </div>
+            <button onclick="openModal('settings-modal')" class="px-3 py-1.5 text-xs font-semibold rounded bg-amber-500 hover:bg-amber-400 text-slate-950 transition-colors shadow shrink-0 w-full sm:w-auto text-center">
+                Set API Token
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8 space-y-6 sm:space-y-8 flex-1">
+        {% block content %}{% endblock %}
+    </main>
+
+    <!-- ================================================================= -->
+    <!-- GLOBAL MODALS                                                     -->
+    <!-- ================================================================= -->
+
+    <!-- Modal 1: Live Deployment Progress Modal -->
+    <div id="deploy-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-[#0f172a] border border-slate-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-[#131d36]/60">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-3 h-3 rounded-full bg-cyan-400 animate-ping"></div>
+                    <h3 id="deploy-modal-title" class="text-sm font-bold text-white uppercase tracking-wider">Deploying Cowrie Sensor</h3>
+                </div>
+                <button id="deploy-modal-close-btn" onclick="closeDeployModal()" class="px-2.5 py-1 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 transition-colors flex items-center gap-1.5" title="Close this screen (Task will continue running in background)">
+                    <i class="fa-solid fa-xmark"></i> <span id="deploy-modal-close-text">Close to Background</span>
+                </button>
+            </div>
+
+            <div class="p-6 space-y-4 overflow-y-auto flex-1">
+                <!-- Status Banner & Progress -->
+                <div class="p-3 rounded-xl bg-[#090d16] border border-slate-800 space-y-2">
+                    <div class="flex items-center justify-between text-xs">
+                        <span class="font-semibold text-slate-300 flex items-center gap-2">
+                            <span id="deploy-status-spinner"><i class="fa-solid fa-spinner fa-spin text-cyan-400"></i></span>
+                            <span id="deploy-status-badge">Status:</span>
+                        </span>
+                        <span id="deploy-status-text" class="text-cyan-300">Initializing...</span>
+                    </div>
+                    <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                        <div id="deploy-progress-bar" class="bg-cyan-500 h-2 rounded-full transition-all duration-300" style="width: 5%"></div>
+                    </div>
+                </div>
+
+                <!-- Terminal Streaming Box -->
+                <div id="deploy-terminal" class="terminal-box rounded-lg p-4 text-xs h-72 overflow-y-auto leading-relaxed text-slate-300">
+                    <div class="text-slate-500">// Provisioning logs will stream here in real-time...</div>
+                </div>
+
+                <div id="deploy-modal-footer" class="hidden flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                    <button type="button" onclick="closeDeployModal()" class="px-5 py-2 text-xs font-bold rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow transition-colors">
+                        View in Fleet Dashboard
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 2: Settings & Token Modal -->
+    <div id="settings-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-[#0f172a] border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-[#131d36]/60">
+                <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-slate-400"></i> Settings
+                </h3>
+                <button onclick="closeModal('settings-modal')" class="text-slate-400 hover:text-white text-sm">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form onsubmit="saveSettings(event)" class="p-6 space-y-5">
+                <!-- DigitalOcean Token -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">DigitalOcean API Token<i class="fa-regular fa-circle-question tip-icon" data-tip="Needs read and write access. It is stored in the deployer's database and never sent back to the browser."></i></label>
+                    <div class="flex gap-2">
+                        <input type="password" id="settings-token" placeholder="dop_v1_..."
+                            class="flex-1 bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2 text-sm text-slate-100 font-mono focus:border-cyan-500 outline-none">
+                        <button type="button" onclick="testToken()" class="px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 transition-colors">
+                            Verify
+                        </button>
+                    </div>
+                    <div id="token-test-result" class="hidden"></div>
+                </div>
+
+                <!-- Hive IP Override -->
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Hive Public IP / Hostname<i class="fa-regular fa-circle-question tip-icon" data-tip="Where sensors ship their logs. Leave it as detected unless the Hive is reached through a different address."></i></label>
+                    <div class="flex gap-2">
+                        <input type="text" id="settings-hive-ip" placeholder="203.0.113.10"
+                            class="flex-1 bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2 text-sm text-slate-100 font-mono focus:border-cyan-500 outline-none">
+                        <button type="button" onclick="testHiveConnection()" class="px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 border border-slate-700 transition-colors">
+                            Test TLS
+                        </button>
+                    </div>
+                    <div id="hive-test-result" class="hidden"></div>
+                </div>
+
+                <!-- Theme -->
+                <div class="flex items-center justify-between gap-3 p-3 rounded-xl bg-[#090d16] border border-slate-800">
+                    <div>
+                        <div class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Theme</div>
+                        <div class="text-[11px] text-slate-500 mt-0.5">Switch between the default dark look and Pink Unicorn.</div>
+                    </div>
+                    <button type="button" id="theme-toggle" onclick="toggleTheme()" class="px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors shrink-0">Pink Unicorn</button>
+                </div>
+
+                <p class="text-[11px] text-slate-500">Option lists (regions, sizes, images) are synced from the <a href="#" data-app-path="/admin" class="text-cyan-400 hover:underline">Admin</a> page.</p>
+
+                <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                    <button type="button" onclick="closeModal('settings-modal')" class="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-5 py-2 text-xs font-bold rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow transition-colors">
+                        Save Settings
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 3: Confirm Destroy Modal -->
+    <div id="destroy-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-[#0f172a] border border-slate-800 rounded-2xl w-full max-w-md shadow-2xl p-6 space-y-4">
+            <div class="flex items-center gap-3 text-rose-400">
+                <i class="fa-solid fa-triangle-exclamation text-2xl"></i>
+                <h3 id="destroy-modal-header" class="text-base font-bold text-white">Destroy Sensor</h3>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+                Are you sure you want to permanently delete sensor <span id="destroy-droplet-name" class="font-mono text-cyan-300 font-bold"></span>? This action cannot be undone.
+            </p>
+
+            <label class="flex items-center gap-2.5 cursor-pointer pt-2">
+                <input type="checkbox" id="destroy-deregister-hive" checked class="rounded text-rose-500 bg-slate-950 border-slate-700 w-4 h-4">
+                <span class="text-xs text-slate-300">Also remove its Hive login<i class="fa-regular fa-circle-question tip-icon" data-tip="Removes this sensor's log-shipping login from the Hive's lswebpasswd."></i></span>
+            </label>
+
+            <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                <button type="button" onclick="closeModal('destroy-modal')" class="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">
+                    Cancel
+                </button>
+                <button type="button" onclick="executeDestroy()" class="px-4 py-2 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-500 text-white shadow transition-colors">
+                    Confirm Destroy
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal 4: Static IP Management Modal -->
+    <div id="static-ip-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-[#0f172a] border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl p-6 space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800/80 pb-3">
+                <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-plus text-slate-400"></i> <span id="static-ip-title">Add static IP to the EDL</span>
+                </h3>
+                <button type="button" onclick="closeModal('static-ip-modal')" class="text-slate-400 hover:text-white text-sm">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+
+            <form onsubmit="addStaticIP(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">IPv4 Address or Subnet CIDR</label>
+                    <input type="text" id="static-ip-input" required placeholder="e.g. 198.51.100.50 or 192.0.2.0/24"
+                        class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2 text-sm text-slate-100 font-mono focus:border-amber-500 outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Label / Notes (Optional)</label>
+                    <input type="text" id="static-ip-comment" placeholder="e.g. Branch Office Cowrie Honeypot"
+                        class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2 text-sm text-slate-100 focus:border-amber-500 outline-none">
+                </div>
+
+                <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                    <button type="button" onclick="closeModal('static-ip-modal')" class="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">
+                        Cancel
+                    </button>
+                    <button type="submit" id="static-ip-submit" class="px-4 py-2 text-xs font-bold rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 shadow transition-colors">
+                        Add to EDL Feed
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal 5: Create Campaign Schedule Modal -->
+    <div id="create-schedule-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-[#0f172a] border border-slate-800 rounded-2xl w-full max-w-xl shadow-2xl overflow-hidden">
+            <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-[#131d36]/60">
+                <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-calendar-plus text-slate-400"></i> New campaign
+                </h3>
+                <button type="button" onclick="closeModal('create-schedule-modal')" class="text-slate-400 hover:text-white text-sm">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+
+            <form onsubmit="handleCreateScheduleSubmit(event)" class="p-6 space-y-4 max-h-[80vh] overflow-y-auto">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Campaign Name</label>
+                    <input type="text" id="sched-name" required placeholder="e.g. Weekly Cowrie SSH Rotation"
+                        class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2 text-sm text-slate-100 focus:border-cyan-500 outline-none">
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Sensor Type</label>
+                        <select id="sched-sensor-type" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2 text-sm text-slate-100 focus:border-cyan-500 outline-none">
+                            <option value="cowrie">Cowrie</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Rebuild schedule<i class="fa-regular fa-circle-question tip-icon" data-tip="Fixed interval: rebuild after each cooldown. Random window: rebuild after a random cooldown so the pattern can't be predicted. Weekly: same day and time each week."></i></label>
+                        <select id="sched-mode" onchange="updateScheduleModeFields()" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2 text-sm text-slate-100 focus:border-cyan-500 outline-none">
+                            <option value="interval">Fixed interval</option>
+                            <option value="random_window">Random rebuild window</option>
+                            <option value="weekly">Weekly</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Timing Parameters -->
+                <div class="p-3.5 rounded-xl bg-[#090d16] border border-slate-800 space-y-3">
+                    <div class="text-[11px] font-mono font-semibold text-slate-400 uppercase tracking-wider">Timing</div>
+                    
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-1">Active Duration per Cycle</label>
+                            <select id="sched-active-dur" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200">
+                                <option value="2h">2 Hours</option>
+                                <option value="4h">4 Hours</option>
+                                <option value="8h">8 Hours (Shift Window)</option>
+                                <option value="12h">12 Hours</option>
+                                <option value="24h" selected>24 Hours (1 Day)</option>
+                                <option value="48h">48 Hours (2 Days)</option>
+                                <option value="60h">60 Hours (Full Weekend)</option>
+                            </select>
+                        </div>
+                        <div id="sched-cooldown-group">
+                            <label class="block text-[11px] text-slate-400 mb-1">Cooldown between cycles<i class="fa-regular fa-circle-question tip-icon" data-tip="How long the sensor stays down before it is rebuilt on a fresh IP."></i></label>
+                            <select id="sched-cooldown-dur" class="w-full bg-slate-900 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200">
+                                <option value="0m">None (Instant rebuild)</option>
+                                <option value="15m">15 Minutes</option>
+                                <option value="1h">1 Hour</option>
+                                <option value="4h">4 Hours</option>
+                                <option value="8h">8 Hours</option>
+                                <option value="24h">24 Hours</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cloud Provider & Specs -->
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Cloud</label>
+                        <select id="sched-provider" onchange="onScheduleProviderChange()" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:border-cyan-500 outline-none">
+                            <option value="digitalocean" selected>DigitalOcean</option>
+                            <option value="gcp">GCP</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label id="sched-region-label" class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Target Region</label>
+                        <select id="sched-region" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:border-cyan-500 outline-none">
+                            <option value="nyc1">New York (NYC1)</option>
+                            <option value="nyc3">New York (NYC3)</option>
+                            <option value="sfo3">San Francisco (SFO3)</option>
+                            <option value="ams3">Amsterdam (AMS3)</option>
+                            <option value="fra1">Frankfurt (FRA1)</option>
+                            <option value="lon1">London (LON1)</option>
+                            <option value="sgp1">Singapore (SGP1)</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label id="sched-size-label" class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">VM Size</label>
+                        <select id="sched-size" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-100 focus:border-cyan-500 outline-none">
+                            <option value="s-1vcpu-2gb" selected>s-1vcpu-2gb (2GB)</option>
+                            <option value="s-2vcpu-2gb">s-2vcpu-2gb</option>
+                            <option value="s-1vcpu-1gb">s-1vcpu-1gb</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Toggles -->
+                <div class="pt-2 border-t border-slate-800/80 space-y-2">
+                    <label id="sched-rotate-regions-row" class="flex items-center gap-2.5 cursor-pointer">
+                        <input type="checkbox" id="sched-rotate-regions" class="rounded text-cyan-500 bg-slate-950 border-slate-700 w-4 h-4">
+                        <span class="text-xs text-slate-300">Rotate regions<i class="fa-regular fa-circle-question tip-icon" data-tip="Move to a different datacenter on every rebuild. DigitalOcean only."></i></span>
+                    </label>
+                    <label class="flex items-center gap-2.5 cursor-pointer">
+                        <input type="checkbox" id="sched-start-now" checked class="rounded text-cyan-500 bg-slate-950 border-slate-700 w-4 h-4">
+                        <span class="text-xs text-slate-300">Start now<i class="fa-regular fa-circle-question tip-icon" data-tip="Launch the first cycle immediately instead of waiting for the schedule."></i></span>
+                    </label>
+                </div>
+
+                <!-- Submit Actions -->
+                <div class="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+                    <button type="button" onclick="closeModal('create-schedule-modal')" class="px-4 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300">
+                        Cancel
+                    </button>
+                    <button type="submit" class="px-5 py-2 text-xs font-bold rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow transition-all">
+                        Create campaign
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Navigation & Base Scripts -->
+    <script>
+        const APP_BASE_PATH = window.location.pathname.startsWith('/sensors') ? '/sensors' : '';
+        function getAppPath(path) {
+            if (!path.startsWith('/')) path = '/' + path;
+            const res = (APP_BASE_PATH + path).replace(/\/+$/, '') || '/';
+            return res;
+        }
+        function navigateTo(path) {
+            window.location.href = getAppPath(path);
+        }
+        document.addEventListener("DOMContentLoaded", () => {
+            document.querySelectorAll('a[data-app-path]').forEach(link => {
+                const target = link.getAttribute('data-app-path');
+                link.href = getAppPath(target);
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    navigateTo(target);
+                });
+            });
+        });
+    </script>
+    <!-- Dynamic App.js Loader ensuring exact path match under /sensors/ or / -->
+    <script>
+        (function() {
+            var base = window.location.pathname.startsWith('/sensors') ? '/sensors' : '';
+            var s = document.createElement('script');
+            s.src = (base + '/static/js/app.js').replace(/\/\//g, '/');
+            document.body.appendChild(s);
+        })();
+    </script>
+    <script>
+        function updateThemeButton() {
+            const btn = document.getElementById('theme-toggle');
+            if (btn) btn.textContent = document.documentElement.getAttribute('data-theme') === 'unicorn' ? 'Back to default' : 'Pink Unicorn';
+        }
+        function toggleTheme() {
+            const root = document.documentElement;
+            const on = root.getAttribute('data-theme') !== 'unicorn';
+            try { on ? localStorage.setItem('theme', 'unicorn') : localStorage.removeItem('theme'); } catch (e) {}
+            if (on) {
+                root.setAttribute('data-theme', 'unicorn');
+                if (!document.getElementById('theme-css')) {
+                    const l = document.createElement('link');
+                    l.rel = 'stylesheet'; l.id = 'theme-css';
+                    l.href = ((location.pathname.indexOf('/sensors') === 0 ? '/sensors' : '') + '/static/theme-unicorn.css');
+                    document.head.appendChild(l);
+                }
+                if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                    ['🦄', '✨', '💖', '🌈', '⭐'].forEach((e, i) => {
+                        for (let n = 0; n < 3; n++) {
+                            const c = document.createElement('span');
+                            c.className = 'unicorn-confetti'; c.textContent = e;
+                            c.style.left = (10 + Math.random() * 80) + '%';
+                            c.style.animationDelay = (Math.random() * 0.4) + 's';
+                            document.body.appendChild(c);
+                            setTimeout(() => c.remove(), 2000);
+                        }
+                    });
+                }
+            } else {
+                root.removeAttribute('data-theme');
+                const l = document.getElementById('theme-css'); if (l) l.remove();
+            }
+            updateThemeButton();
+        }
+        updateThemeButton();
+    </script>
+</body>
+</html>

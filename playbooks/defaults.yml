@@ -1,0 +1,12 @@
+---
+# Defaults shared by every sensor/health playbook. Override with -e / extra vars.
+admin_ssh_port: 64295
+tpot_version: "24.04"
+tpot_repo: dtagdevsec
+swap_size_gb: 2
+ssl_verification: full
+hive_port: 64294
+hive_cert_content: ""
+# Logstash shipper sizing (trimmed per-sensor pipeline; see templates/logstash_http_output.conf.j2)
+logstash_heap: "512m"
+logstash_mem_limit: "1g"

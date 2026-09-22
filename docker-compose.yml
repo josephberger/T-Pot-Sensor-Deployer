@@ -1,0 +1,62 @@
+# T-Pot Sensor Deployer
+#
+# The stack is self-contained: code, Terraform, Redis and all state (SQLite DB, Terraform state, logs)
+# live in the image / named volumes. The only host paths mounted are inputs:
+#   TPOT_HOST_DIR  the T-Pot Hive install the deployer registers sensors into (read/write)
+#   SECRETS_HOST_DIR  optional read-only dir holding gcp-sa.json and ssh_key.pub
+# Access is through T-Pot's own nginx (see nginx/tpot-location.conf) or directly on WEB_BIND:WEB_PORT.
+
+x-deployer: &deployer
+  build:
+    context: .
+  image: tpot-sensor-deployer:latest
+  restart: unless-stopped
+  # Run as the user that owns the T-Pot directory so Hive files stay writable.
+  user: "${PUID:-1000}:${PGID:-1000}"
+  # Group that can write T-Pot's nginx config dir (see `stat -c %g $TPOT_HOST_DIR`).
+  group_add:
+    - "${TPOT_GID:-2000}"
+  env_file:
+    - .env
+  # Fixed in-container paths; set here (not in .env) so a stale .env can never override them.
+  environment:
+    DATA_DIR: /data
+    TPOT_DIR: /tpot
+    SECRETS_DIR: /secrets
+    REDIS_URL: redis://redis:6379/0
+    GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp-sa.json
+  volumes:
+    - deployer_data:/data
+    - ${TPOT_HOST_DIR:?Set TPOT_HOST_DIR in .env}:/tpot
+    - ${SECRETS_HOST_DIR:-./secrets}:/secrets:ro
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  redis:
+    image: redis:alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  web:
+    <<: *deployer
+    container_name: tpot-deployer-web
+    ports:
+      # Loopback only: T-Pot's host-network nginx proxies /sensors/ to this port.
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8880}:8880"
+
+  worker:
+    <<: *deployer
+    container_name: tpot-deployer-worker
+    command: ["python3", "worker.py"]
+
+volumes:
+  deployer_data:
+  redis_data:

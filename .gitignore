@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+.env
+.tpot-sensor-deployer/
+doconsole-reference/
+.system_generated/
+.claude/
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraform.tfstate.lock.info
+terraform.tfvars
+terraform.tfvars.json
+secrets/
+tests/node_modules/
+tests/package-lock.json

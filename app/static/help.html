@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-[#080d1a] text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Help - T-Pot Deployer</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Cpath fill=%27%2322d3ee%27 d=%27M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3z%27/%3E%3C/svg%3E">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script>
+        /* Theme init runs before paint so there is no flash. "unicorn" is the only alternate theme. */
+        (function () {
+            try {
+                if (localStorage.getItem('theme') === 'unicorn') {
+                    document.documentElement.setAttribute('data-theme', 'unicorn');
+                    var base = location.pathname.indexOf('/sensors') === 0 ? '/sensors' : '';
+                    document.write('<link rel="stylesheet" id="theme-css" href="' + base + '/static/theme-unicorn.css">');
+                }
+            } catch (e) {}
+        })();
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; scroll-behavior: smooth; }
+        code, .font-mono { font-family: 'JetBrains Mono', monospace; }
+        h2 { scroll-margin-top: 90px; }
+        code { background: #111a2e; border: 1px solid #1e293b; border-radius: 4px; padding: 1px 5px; font-size: 12px; color: #cbd5e1; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; color: #94a3b8; font-weight: 600; padding: 8px 10px; border-bottom: 1px solid #1e293b; background: #0a1020; }
+        td { padding: 8px 10px; border-bottom: 1px solid #16203a; vertical-align: top; color: #cbd5e1; }
+        p, li { line-height: 1.65; }
+    </style>
+</head>
+<body class="min-h-full bg-[#080d1a]">
+
+<header class="border-b border-slate-800/80 bg-[#0c121e]/95 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between gap-3">
+        <a href="#" data-app-path="/" class="flex items-center gap-2.5 text-white">
+            <span class="w-8 h-8 rounded-lg bg-slate-800/80 border border-slate-700/60 flex items-center justify-center text-cyan-400"><i class="fa-solid fa-shield-halved"></i></span>
+            <span class="text-sm font-bold font-mono uppercase tracking-wider">T-Pot Deployer</span>
+        </a>
+        <nav class="flex items-center gap-1 text-xs font-semibold overflow-x-auto">
+            <a href="#" data-app-path="/" class="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800">Dashboard</a>
+            <a href="#" data-app-path="/deploy" class="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800">Deploy</a>
+            <a href="#" data-app-path="/fleet" class="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800">Fleet</a>
+            <a href="#" data-app-path="/campaigns" class="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800">Campaigns</a>
+            <a href="#" data-app-path="/edl" class="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800">EDL</a>
+            <a href="#" data-app-path="/tasks" class="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800">Tasks</a>
+            <a href="#" data-app-path="/admin" class="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800">Admin</a>
+            <span class="px-2.5 py-1.5 rounded-lg bg-cyan-950/80 text-cyan-300 border border-cyan-800/80">Help</span>
+        </nav>
+    </div>
+</header>
+
+<main class="max-w-5xl mx-auto px-4 py-8 grid grid-cols-1 lg:grid-cols-[200px_1fr] gap-8">
+
+    <aside class="hidden lg:block">
+        <div class="sticky top-20 space-y-1 text-xs text-slate-400">
+            <div class="text-[10px] uppercase tracking-wider text-slate-500 mb-2">On this page</div>
+            <a class="block px-2 py-1 rounded hover:bg-slate-800 hover:text-slate-200" href="#start">Getting started</a>
+            <a class="block px-2 py-1 rounded hover:bg-slate-800 hover:text-slate-200" href="#deploy">What a deploy does</a>
+            <a class="block px-2 py-1 rounded hover:bg-slate-800 hover:text-slate-200" href="#sensors">Sensor types</a>
+            <a class="block px-2 py-1 rounded hover:bg-slate-800 hover:text-slate-200" href="#ttl">Auto-destroy</a>
+            <a class="block px-2 py-1 rounded hover:bg-slate-800 hover:text-slate-200" href="#campaigns">Campaigns</a>
+            <a class="block px-2 py-1 rounded hover:bg-slate-800 hover:text-slate-200" href="#firewall">Firewall feed</a>
+            <a class="block px-2 py-1 rounded hover:bg-slate-800 hover:text-slate-200" href="#health">Health and status</a>
+            <a class="block px-2 py-1 rounded hover:bg-slate-800 hover:text-slate-200" href="#logins">Hive logins</a>
+            <a class="block px-2 py-1 rounded hover:bg-slate-800 hover:text-slate-200" href="#troubleshooting">Troubleshooting</a>
+            <a class="block px-2 py-1 rounded hover:bg-slate-800 hover:text-slate-200" href="#glossary">Glossary</a>
+        </div>
+    </aside>
+
+    <article class="space-y-10 min-w-0 text-sm text-slate-300">
+
+        <section>
+            <h1 class="text-2xl font-bold text-white">Help</h1>
+            <p class="text-slate-400 mt-1">What the deployer does, how the pieces fit, and what to do when something looks wrong.</p>
+        </section>
+
+        <section>
+            <h2 id="start" class="text-lg font-bold text-white mb-3">Getting started</h2>
+            <ol class="list-decimal list-inside space-y-1.5">
+                <li>Open <b>Admin</b>. Click <b>Verify token</b>, then <b>Sync options</b> so the Deploy page has current regions and sizes.</li>
+                <li>Open <b>Deploy</b>, pick a sensor type, choose an auto-destroy time (use 1 or 2 hours while testing), and click <b>Launch sensor</b>.</li>
+                <li>Watch the progress dialog, or close it and follow the run on <b>Tasks</b>. A deploy takes about 5 minutes.</li>
+                <li>When it finishes, the sensor appears on <b>Fleet</b> and its IP is in the firewall feed.</li>
+            </ol>
+        </section>
+
+        <section>
+            <h2 id="deploy" class="text-lg font-bold text-white mb-3">What a deploy does</h2>
+            <p class="mb-3">The cloud provider is used only to create and delete the machine. Everything else happens over plain SSH, so it works the same way whatever the cloud.</p>
+            <ol class="list-decimal list-inside space-y-1.5">
+                <li><b>Checks first.</b> It refuses to start if the sensor type can't be set up, so nothing is created and billed for nothing.</li>
+                <li><b>Creates a login</b> for the sensor in the Hive, so it can send its logs.</li>
+                <li><b>Creates the machine</b> with the deployer's SSH key, and records it straight away so it can never be forgotten.</li>
+                <li><b>Publishes its IP</b> to the firewall feed so the firewall can admit it while it is still being set up.</li>
+                <li><b>Configures it</b>: swap, Docker, the honeypot and log shipper, the Hive's certificate, and it moves admin SSH from port 22 to 64295 (the honeypot needs 22).</li>
+                <li><b>Checks it</b>: containers running, log shipper up, honeypot ports open, Hive reachable. If the firewall hasn't admitted it yet, it waits a few minutes.</li>
+            </ol>
+            <p class="mt-3">If setup fails, the machine is kept for debugging (status <i>provision failed</i>) and is deleted when its auto-destroy time runs out.</p>
+        </section>
+
+        <section>
+            <h2 id="sensors" class="text-lg font-bold text-white mb-3">Sensor types</h2>
+            <p class="mb-3">Each type is a different honeypot. Only types with a setup playbook can be deployed; the others are greyed out on the Deploy page until theirs exists.</p>
+            <div class="overflow-x-auto rounded-lg border border-slate-800">
+                <table>
+                    <thead><tr><th>Type</th><th>Catches</th><th>Ports</th></tr></thead>
+                    <tbody>
+                        <tr><td>Cowrie</td><td>SSH and Telnet brute force, and what attackers type in a fake shell</td><td>22, 23</td></tr>
+                        <tr><td>Dionaea</td><td>Malware and worms spreading over SMB and similar services</td><td>445, 135, 21, 1433, 3306 ...</td></tr>
+                        <tr><td>Conpot</td><td>Industrial (SCADA / ICS) probing</td><td>102, 502, 161 ...</td></tr>
+                        <tr><td>Elasticpot</td><td>Attacks on exposed Elasticsearch</td><td>9200</td></tr>
+                        <tr><td>Mailoney</td><td>Spam relaying and mail credential guessing</td><td>25, 587</td></tr>
+                        <tr><td>Heralding</td><td>Credentials tried against many protocols</td><td>POP3, IMAP, VNC ...</td></tr>
+                        <tr><td>Cisco ASA</td><td>VPN gateway exploits</td><td>5000/udp, 8443</td></tr>
+                        <tr><td>Citrix</td><td>Citrix ADC / Gateway exploits</td><td>443</td></tr>
+                        <tr><td>Redis</td><td>Attacks on exposed Redis</td><td>6379</td></tr>
+                        <tr><td>Sentrypeer</td><td>VoIP / SIP fraud attempts</td><td>5060</td></tr>
+                        <tr><td>Adbhoney</td><td>Android Debug Bridge worms</td><td>5555</td></tr>
+                        <tr><td>Multi-sensor</td><td>Several honeypots on one machine (needs 4 GB)</td><td>many</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="mt-3">Every sensor also runs a log shipper, which is the biggest program on the machine. A 2 GB droplet is enough for a single honeypot.</p>
+        </section>
+
+        <section>
+            <h2 id="ttl" class="text-lg font-bold text-white mb-3">Auto-destroy</h2>
+            <p>Every sensor has a time limit, after which it is deleted along with its Hive login and its entry in the firewall feed. Set it when you deploy, and extend or remove it from <b>Fleet</b> (the <b>+</b> and <b>x</b> beside the timer). Choose <i>Never</i> only for a sensor you intend to keep and pay for.</p>
+        </section>
+
+        <section>
+            <h2 id="campaigns" class="text-lg font-bold text-white mb-3">Campaigns</h2>
+            <p class="mb-3">Scanners such as Shodan and Censys record which addresses are honeypots. A campaign avoids leaving one in place: it runs a sensor for a window, destroys it, waits, then rebuilds it on a <b>fresh IP address</b>. Reserved and floating IPs are never used.</p>
+            <ul class="list-disc list-inside space-y-1.5">
+                <li><b>Fixed interval</b>: rebuild after each cooldown. <b>Random window</b>: rebuild after a random cooldown so the pattern can't be predicted. <b>Weekly</b>: the same day and time each week.</li>
+                <li><b>Rotate regions</b> moves to a different datacenter on each rebuild.</li>
+                <li>The worker checks campaigns every 10 seconds. It starts at most 3 rebuilds at once, and if a campaign fails 3 times in a row it is <b>suspended</b> to protect your account. Fix the cause, then resume it.</li>
+            </ul>
+        </section>
+
+        <section>
+            <h2 id="firewall" class="text-lg font-bold text-white mb-3">Firewall feed (Palo Alto EDL)</h2>
+            <p class="mb-3">Sensors reach the Hive on port 64294 through your firewall. The firewall only admits addresses on a list, and the deployer keeps that list up to date as a plain-text feed (an External Dynamic List).</p>
+            <ol class="list-decimal list-inside space-y-1.5">
+                <li>In PAN-OS: <b>Objects &gt; External Dynamic Lists &gt; Add</b>. Type <b>IP List</b>, source = the URL on the <b>EDL</b> page, repeat <b>every 5 minutes</b>.</li>
+                <li>Use that list as the source address of the security rule and the NAT rule that admit TCP 64294 to the Hive.</li>
+            </ol>
+            <p class="mt-3">A sensor is listed as soon as it has an IP. The firewall picks the change up on its next refresh, usually within 5 to 7 minutes, and the deploy waits for that before it reports a warning.</p>
+            <p class="mt-3"><b>Static entries</b> are IPs added by hand. They are always in the feed, so check the list on the EDL page and remove any you don't recognise.</p>
+            <p class="mt-3">To confirm the firewall is fetching the feed, look at T-Pot's nginx log: requests for <code>/edl/sensors.txt</code> with an empty user agent, about every 5 to 7 minutes, come from the firewall.</p>
+        </section>
+
+        <section>
+            <h2 id="health" class="text-lg font-bold text-white mb-3">Health and status</h2>
+            <table class="rounded-lg overflow-hidden">
+                <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+                <tbody>
+                    <tr><td>provisioning</td><td>The machine exists and is being set up. Its IP is already in the firewall feed.</td></tr>
+                    <tr><td>active</td><td>Set up and passed its checks.</td></tr>
+                    <tr><td>provision failed</td><td>Setup failed. The machine is kept for debugging and deleted when its auto-destroy time runs out. The Tasks page has the log.</td></tr>
+                </tbody>
+            </table>
+            <p class="mt-3">The <b>Health</b> button on Fleet does a quick ping and port check from the deployer. The full check (containers, log shipper, Hive reachability, disk) runs at deploy time.</p>
+            <p class="mt-3"><b>"Cannot reach the Hive"</b> is a warning, not a failure. The sensor is running and recording, but the firewall isn't admitting it yet, so its logs can't be shipped. See the firewall section.</p>
+        </section>
+
+        <section>
+            <h2 id="logins" class="text-lg font-bold text-white mb-3">Hive logins</h2>
+            <p>Each sensor gets its own login in the Hive, so one sensor can be cut off without affecting the others. <b>Admin</b> lists them and marks each <i>in use</i> or <i>not in fleet</i>. A login that is not in the fleet is a leftover, for example from a machine deleted in the cloud console, and can be removed with its button.</p>
+        </section>
+
+        <section>
+            <h2 id="troubleshooting" class="text-lg font-bold text-white mb-3">Troubleshooting</h2>
+            <div class="overflow-x-auto rounded-lg border border-slate-800">
+                <table>
+                    <thead><tr><th>What you see</th><th>What to do</th></tr></thead>
+                    <tbody>
+                        <tr><td>Deploy fails straight away</td><td>Open the task on <b>Tasks</b> and read the last lines. The most common cause is a missing SSH key file or an unsupported sensor type.</td></tr>
+                        <tr><td>Setup fails with a timeout on port 64295</td><td>The deployer can't reach the sensor's admin port. The cloud firewall allows it only from the Hive's IP, so the deployer's outgoing IP must match the Hive's address.</td></tr>
+                        <tr><td>Sensor is active but no logs reach the Hive</td><td>Check, in order: is the log shipper running on the sensor; can the sensor reach the Hive on 64294; is the firewall admitting it (see above); does its login exist (Admin).</td></tr>
+                        <tr><td>The Deploy page lists no regions or sizes</td><td>Admin, then <b>Sync options</b>.</td></tr>
+                        <tr><td>A task says it was interrupted</td><td>The worker was restarted while it ran. The machine may still exist; check Fleet and delete it if you don't want it.</td></tr>
+                        <tr><td>A campaign is suspended</td><td>It failed 3 times in a row. Read the error on the Campaigns page, fix it, then resume.</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <p class="mt-3">You can reach a sensor from the Hive host with <code>ssh -i secrets/ssh_key -p 64295 root@&lt;sensor-ip&gt;</code>, then <code>docker ps</code> and <code>docker logs logstash</code>.</p>
+        </section>
+
+        <section>
+            <h2 id="glossary" class="text-lg font-bold text-white mb-3">Glossary</h2>
+            <dl class="space-y-2">
+                <div><dt class="font-semibold text-slate-100 inline">Hive</dt> <dd class="inline text-slate-400">: the central T-Pot install that receives and stores logs from all sensors.</dd></div>
+                <div><dt class="font-semibold text-slate-100 inline">Sensor</dt> <dd class="inline text-slate-400">: a cloud machine running a honeypot and shipping its logs to the Hive.</dd></div>
+                <div><dt class="font-semibold text-slate-100 inline">Honeypot</dt> <dd class="inline text-slate-400">: a fake service that records what attackers do to it.</dd></div>
+                <div><dt class="font-semibold text-slate-100 inline">EDL</dt> <dd class="inline text-slate-400">: External Dynamic List, a text list of IPs a Palo Alto firewall re-reads on a schedule.</dd></div>
+                <div><dt class="font-semibold text-slate-100 inline">Auto-destroy (TTL)</dt> <dd class="inline text-slate-400">: the time after which a sensor is deleted automatically.</dd></div>
+                <div><dt class="font-semibold text-slate-100 inline">Campaign</dt> <dd class="inline text-slate-400">: a schedule that destroys and rebuilds a sensor on fresh IPs.</dd></div>
+                <div><dt class="font-semibold text-slate-100 inline">Playbook</dt> <dd class="inline text-slate-400">: the Ansible script that sets up (or checks) one sensor type over SSH.</dd></div>
+                <div><dt class="font-semibold text-slate-100 inline">Worker</dt> <dd class="inline text-slate-400">: the background process that runs deploys, destroys, campaign steps and expiry checks.</dd></div>
+            </dl>
+        </section>
+
+    </article>
+</main>
+
+<script>
+    // Work under T-Pot's /sensors/ prefix or directly.
+    const BASE = window.location.pathname.startsWith('/sensors') ? '/sensors' : '';
+    document.querySelectorAll('a[data-app-path]').forEach(a => {
+        const t = a.getAttribute('data-app-path');
+        a.href = (BASE + t).replace(/\/+$/, '') || '/';
+    });
+</script>
+</body>
+</html>

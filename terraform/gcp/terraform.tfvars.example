@@ -1,0 +1,38 @@
+# =============================================================
+# GCP T-Pot Cowrie Sensor - Example Terraform Variables
+# Copy to terraform.tfvars and fill in your values
+# =============================================================
+
+# Your Google Cloud Project ID
+project_id = "your-gcp-project-id"
+
+# Region & Zone
+region = "us-central1"
+zone   = "us-central1-a"
+
+# Sensor Instance Details
+sensor_name  = "tpot-cowrie-sensor-gcp-1"
+machine_type = "e2-small"  # 2 vCPUs, 2 GB RAM (works great with 2GB swap)
+disk_size_gb = 30
+
+# Host Admin Management SSH (Port 64295)
+ssh_user            = "adminuser"
+ssh_public_key      = "ssh-rsa AAAAB3NzaC1yc2EAAA..."
+admin_ssh_port      = 64295
+admin_allowed_cidrs = ["0.0.0.0/0"]  # Or restrict to your admin IP: ["203.0.113.50/32"]
+
+# Central T-Pot Hive Configuration
+hive_ip        = "203.0.113.10"
+hive_port      = 64294
+tpot_version   = "24.04"
+
+# Hive Authentication
+# Generated via 'htpasswd -b -n <user> <pass>' and base64 encoded
+# tpot_hive_user = "c2Vuc29yLXVzZXI6cGFzc3dvcmQ="
+
+# Hive SSL Certificate (PEM format) from ~/tpotce/data/nginx/cert/nginx.crt
+# hive_cert = <<-EOT
+# -----BEGIN CERTIFICATE-----
+# MIID...
+# -----END CERTIFICATE-----
+# EOT

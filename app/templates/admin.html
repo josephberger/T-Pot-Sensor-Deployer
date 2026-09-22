@@ -1,0 +1,197 @@
+{% extends "base.html" %}
+
+{% block title %}Admin{% endblock %}
+
+{% block content %}
+<div class="space-y-4 sm:space-y-6">
+
+    <!-- DigitalOcean -->
+    <div class="rounded-xl bg-[#0f172a] border border-slate-800 shadow-lg overflow-hidden">
+        <div class="px-4 sm:px-6 py-3 border-b border-slate-800/80 bg-[#121c32]/50 flex items-center justify-between gap-2">
+            <h2 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider"><i class="fa-brands fa-digital-ocean text-slate-400 mr-2"></i>DigitalOcean</h2>
+            <span id="admin-do-badge" class="px-2 py-0.5 text-[11px] font-mono rounded-full bg-slate-800 text-slate-400 border border-slate-700">checking...</span>
+        </div>
+        <div class="p-4 sm:p-6 space-y-4 text-xs text-slate-300">
+            
+            <div class="flex flex-wrap items-center gap-2">
+                <button onclick="adminVerifyToken()" class="px-3 py-1.5 font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700" data-tip="Checks the saved API token with DigitalOcean.">Verify token</button>
+                <button id="admin-sync-btn" onclick="adminSync()" class="px-3 py-1.5 font-semibold rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white"data-tip="The regions, sizes and images on the Deploy page come from a local copy. This refreshes it from DigitalOcean.">Sync options</button>
+                <span id="admin-do-msg" class="font-mono text-slate-400"></span>
+            </div>
+            <div class="grid grid-cols-3 gap-2 font-mono">
+                <div class="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">Regions <b id="cnt-regions" class="text-white ml-1">-</b></div>
+                <div class="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">Sizes <b id="cnt-sizes" class="text-white ml-1">-</b></div>
+                <div class="p-2.5 rounded-lg bg-slate-900/60 border border-slate-800">Images <b id="cnt-images" class="text-white ml-1">-</b></div>
+                
+            </div>
+            <div class="font-mono text-slate-500">Last synced: <span id="admin-last-sync">never</span></div>
+
+            <details class="rounded-lg bg-slate-900/40 border border-slate-800"><summary class="cursor-pointer px-3 py-2 font-semibold text-slate-300">Regions</summary>
+                <div id="list-regions" class="px-3 pb-3 font-mono text-[11px] text-slate-400 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-0.5"></div></details>
+            <details class="rounded-lg bg-slate-900/40 border border-slate-800"><summary class="cursor-pointer px-3 py-2 font-semibold text-slate-300">Sizes</summary>
+                <div id="list-sizes" class="px-3 pb-3 font-mono text-[11px] text-slate-400 space-y-0.5"></div></details>
+            <details class="rounded-lg bg-slate-900/40 border border-slate-800"><summary class="cursor-pointer px-3 py-2 font-semibold text-slate-300">Images</summary>
+                <div id="list-images" class="px-3 pb-3 font-mono text-[11px] text-slate-400 space-y-0.5"></div></details>
+        </div>
+    </div>
+
+    <!-- GCP -->
+    <div class="rounded-xl bg-[#0f172a] border border-slate-800 shadow-lg overflow-hidden">
+        <div class="px-4 sm:px-6 py-3 border-b border-slate-800/80 bg-[#121c32]/50 flex items-center justify-between gap-2">
+            <h2 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider"><i class="fa-brands fa-google text-slate-400 mr-2"></i>Google Cloud</h2>
+            <span id="admin-gcp-badge" class="px-2 py-0.5 text-[11px] font-mono rounded-full bg-slate-800 text-slate-400 border border-slate-700">checking...</span>
+        </div>
+        <div class="p-4 sm:p-6 space-y-3 text-xs text-slate-300">
+            <p class="text-slate-500">Auth is a service account key at <code>secrets/gcp-sa.json</code> (read-only mount); no token to save here. Set the project id and defaults on the Deploy page's GCP tab.</p>
+            <div class="flex flex-wrap items-center gap-2">
+                <button onclick="adminVerifyGCP()" class="px-3 py-1.5 font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700" data-tip="Checks the service account key and project id against the GCP Compute API.">Test connection</button>
+                <button onclick="adminTeardownGCPNetwork()" class="px-3 py-1.5 font-semibold rounded-lg bg-rose-950/60 hover:bg-rose-900/60 text-rose-300 border border-rose-800/60" data-tip="Deletes the dedicated tpot-sensor-vpc network and its subnets. Refused while any GCP sensor is still tracked. A deploy re-creates it automatically, so this is only for cleanup.">Tear down network</button>
+                <span id="admin-gcp-msg" class="font-mono text-slate-400"></span>
+            </div>
+            <div class="font-mono text-slate-500">Project: <span id="admin-gcp-project" class="text-cyan-300">-</span> &middot; Service account key: <span id="admin-gcp-key">-</span></div>
+            <p class="text-slate-500">Sensors get a dedicated <code>tpot-sensor-vpc</code> network + one subnet per region, created automatically on first deploy (not the project's default network, which some projects don't have).</p>
+        </div>
+    </div>
+
+    <!-- Deployer SSH key -->
+    <div class="rounded-xl bg-[#0f172a] border border-slate-800 shadow-lg overflow-hidden">
+        <div class="px-4 sm:px-6 py-3 border-b border-slate-800/80 bg-[#121c32]/50">
+            <h2 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider"><i class="fa-solid fa-key text-slate-400 mr-2"></i>Deployer SSH key</h2>
+        </div>
+        <div class="p-4 sm:p-6 space-y-2 text-xs text-slate-300">
+            <p class="text-slate-500">Used to configure and check every sensor. It is uploaded to DigitalOcean automatically on each deploy.</p>
+            <div class="font-mono">Status: <span id="admin-key-status">-</span></div>
+            <div class="font-mono">Fingerprint: <span id="admin-key-fp" class="text-cyan-300">-</span></div>
+            <div class="font-mono text-slate-500">Path: <span id="admin-key-path">-</span></div>
+        </div>
+    </div>
+
+    <!-- Hive -->
+    <div class="rounded-xl bg-[#0f172a] border border-slate-800 shadow-lg overflow-hidden">
+        <div class="px-4 sm:px-6 py-3 border-b border-slate-800/80 bg-[#121c32]/50">
+            <h2 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider"><i class="fa-solid fa-server text-slate-400 mr-2"></i>T-Pot Hive</h2>
+        </div>
+        <div class="p-4 sm:p-6 space-y-3 text-xs text-slate-300">
+            <div class="font-mono">Install: <span id="admin-hive-install">-</span> &middot; Address: <span id="admin-hive-ip" class="text-cyan-300">-</span> &middot; Certificate: <span id="admin-hive-cert">-</span></div>
+            <p class="text-slate-500">Each sensor has its own login in the Hive. Logins marked <span class="text-amber-300">not in fleet</span> are leftovers and can be removed.</p>
+            <div id="admin-hive-sensors" class="space-y-1"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+const esc = (s) => escapeHtml(String(s ?? ""));
+const setMsg = (t, ok) => { const m = document.getElementById("admin-do-msg"); m.className = "font-mono " + (ok === false ? "text-rose-400" : ok ? "text-emerald-400" : "text-slate-400"); m.innerText = t; };
+
+async function adminLoad() {
+    const [status, options, fleet] = await Promise.all([
+        fetch(apiUrl("/api/status")).then(r => r.json()),
+        fetch(apiUrl("/api/options")).then(r => r.json()),
+        fetch(apiUrl("/api/droplets")).then(r => r.json()).catch(() => ({droplets: []})),
+    ]);
+
+    const badge = document.getElementById("admin-do-badge");
+    const tokenSet = status.config && status.config.do_token_set;
+    badge.innerText = !tokenSet ? "no token" : (status.digitalocean.verified ? "token verified" : "token saved, not verified");
+    badge.className = "px-2 py-0.5 text-[11px] font-mono rounded-full border " + (tokenSet && status.digitalocean.verified ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "bg-amber-500/20 text-amber-300 border-amber-500/30");
+
+    document.getElementById("cnt-regions").innerText = (options.regions || []).length;
+    document.getElementById("cnt-sizes").innerText = (options.sizes || []).length;
+    document.getElementById("cnt-images").innerText = (options.images || []).length;
+        document.getElementById("admin-last-sync").innerText = options.last_synced_at ? fmtWhen(options.last_synced_at) : "never (showing built-in defaults)";
+    document.getElementById("list-regions").innerHTML = (options.regions || []).map(r => `<div>${esc(r.slug)} <span class="text-slate-600">${esc(r.name)}</span></div>`).join("");
+    document.getElementById("list-sizes").innerHTML = (options.sizes || []).map(s => `<div>${esc(s.slug)} <span class="text-slate-600">${esc(s.vcpus)} vCPU / ${esc(s.memory)} MB / $${esc(s.price_monthly)} mo</span></div>`).join("");
+    document.getElementById("list-images").innerHTML = (options.images || []).map(i => `<div>${esc(i.slug || i.id)} <span class="text-slate-600">${esc(i.name)}</span></div>`).join("");
+
+    const gcp = status.gcp || {};
+    const gcpBadge = document.getElementById("admin-gcp-badge");
+    gcpBadge.innerText = gcp.configured ? "configured" : "not configured";
+    gcpBadge.className = "px-2 py-0.5 text-[11px] font-mono rounded-full border " + (gcp.configured ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "bg-amber-500/20 text-amber-300 border-amber-500/30");
+    document.getElementById("admin-gcp-project").innerText = gcp.project_id || "not set";
+    document.getElementById("admin-gcp-key").innerHTML = gcp.service_account_present ? '<span class="text-emerald-400">found</span>' : '<span class="text-rose-400">missing: put secrets/gcp-sa.json next to docker-compose.yml</span>';
+
+    const k = status.local_ssh_key || {};
+    document.getElementById("admin-key-status").innerHTML = k.found ? '<span class="text-emerald-400">found</span>' : '<span class="text-rose-400">missing: put secrets/ssh_key and secrets/ssh_key.pub next to docker-compose.yml</span>';
+    document.getElementById("admin-key-fp").innerText = k.fingerprint || "-";
+    document.getElementById("admin-key-path").innerText = k.path || "-";
+
+    const h = status.hive || {};
+    document.getElementById("admin-hive-install").innerHTML = h.installed ? '<span class="text-emerald-400">detected</span>' : '<span class="text-rose-400">not found (check TPOT_HOST_DIR)</span>';
+    document.getElementById("admin-hive-ip").innerText = h.ip || "-";
+    document.getElementById("admin-hive-cert").innerHTML = h.cert_loaded ? '<span class="text-emerald-400">loaded</span>' : '<span class="text-rose-400">missing</span>';
+
+    const inUse = new Set((fleet.droplets || []).map(d => d.sensor_user).filter(Boolean));
+    const box = document.getElementById("admin-hive-sensors");
+    const users = h.registered_sensors || [];
+    box.innerHTML = users.length ? users.map(u => `
+        <div class="flex items-center justify-between gap-2 p-2 rounded-lg bg-slate-900/40 border border-slate-800 font-mono">
+            <span class="truncate">${esc(u)}</span>
+            <span class="flex items-center gap-2 shrink-0">
+                ${inUse.has(u) ? '<span class="text-emerald-400">in use</span>' : '<span class="text-amber-300">not in fleet</span>'}
+                <button ${inUse.has(u) ? "disabled" : ""} onclick="adminRemoveSensor('${esc(u)}')" class="px-2 py-1 rounded bg-rose-950/60 border border-rose-800/60 text-rose-300 hover:bg-rose-900/60 disabled:opacity-30 disabled:cursor-not-allowed">Remove</button>
+            </span>
+        </div>`).join("") : '<div class="text-slate-500">No sensors registered.</div>';
+}
+
+async function adminVerifyToken() {
+    setMsg("Verifying...");
+    try {
+        const r = await fetch(apiUrl("/api/test/token"), {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || "Verification failed");
+        setMsg(`Valid: ${d.account.email} (droplet limit ${d.account.droplet_limit})`, true);
+        adminLoad();
+    } catch (e) { setMsg(e.message, false); }
+}
+
+async function adminVerifyGCP() {
+    const m = document.getElementById("admin-gcp-msg");
+    const setGcpMsg = (t, ok) => { m.className = "font-mono " + (ok === false ? "text-rose-400" : ok ? "text-emerald-400" : "text-slate-400"); m.innerText = t; };
+    setGcpMsg("Testing...");
+    try {
+        const r = await fetch(apiUrl("/api/test/gcp"), {method: "POST", headers: {"Content-Type": "application/json"}, body: "{}"});
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || "Test failed");
+        setGcpMsg(`Valid: project '${d.account.project_id}' (${d.account.zone_count} zones visible)`, true);
+        adminLoad();
+    } catch (e) { setGcpMsg(e.message, false); }
+}
+
+async function adminTeardownGCPNetwork() {
+    if (!confirm("Delete the dedicated tpot-sensor-vpc network and its subnets? A deploy re-creates it automatically.")) return;
+    const m = document.getElementById("admin-gcp-msg");
+    const setGcpMsg = (t, ok) => { m.className = "font-mono " + (ok === false ? "text-rose-400" : ok ? "text-emerald-400" : "text-slate-400"); m.innerText = t; };
+    setGcpMsg("Tearing down...");
+    try {
+        const r = await fetch(apiUrl("/api/gcp/network"), {method: "DELETE"});
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || "Teardown failed");
+        setGcpMsg(d.message, true);
+    } catch (e) { setGcpMsg(e.message, false); }
+}
+
+async function adminSync() {
+    const btn = document.getElementById("admin-sync-btn");
+    btn.disabled = true; setMsg("Querying DigitalOcean...");
+    try {
+        const r = await fetch(apiUrl("/api/cloud/sync"), {method: "POST"});
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.detail || "Sync failed");
+        setMsg(d.message, true);
+        adminLoad();
+    } catch (e) { setMsg(e.message, false); }
+    finally { btn.disabled = false; }
+}
+
+async function adminRemoveSensor(user) {
+    if (!confirm(`Remove Hive login '${user}'? A sensor still using it will stop being able to ship logs.`)) return;
+    const r = await fetch(apiUrl("/api/hive/sensors/" + encodeURIComponent(user)), {method: "DELETE"});
+    const d = await r.json();
+    showNotification(r.ok ? d.message : (d.detail || "Failed"), r.ok ? "success" : "error");
+    adminLoad();
+}
+
+// app.js is injected dynamically; the window load event waits for it (DOMContentLoaded does not).
+window.addEventListener("load", adminLoad);
+</script>
+{% endblock %}

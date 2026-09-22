@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block title %}Deploy Honeypot Sensor{% endblock %}
+
+{% block content %}
+        <div id="section-deploy" class="rounded-xl bg-[#0f172a] border border-slate-800 shadow-lg overflow-hidden scroll-mt-28">
+            <div class="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-800/80 bg-[#121c32]/50 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-plus text-slate-400"></i>
+                    <h2 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">Deploy a sensor</h2>
+                    <i class="fa-regular fa-circle-question tip-icon" data-tip="Creates a cloud machine, sets up the honeypot and log shipping over SSH, checks it, and registers it with the Hive. It is destroyed automatically when its auto-destroy time is up."></i>
+                </div>
+            </div>
+
+            <!-- Cloud Provider Selector Tabs -->
+            <div class="flex border-b border-slate-800 bg-[#090e1a]/60 px-2 sm:px-6 pt-2 sm:pt-3 gap-1 sm:gap-2">
+                <button type="button" id="tab-btn-do" onclick="switchProviderTab('do')" class="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 sm:py-2 text-xs font-bold rounded-t-lg border-b-2 border-cyan-400 bg-slate-800/80 text-cyan-300 flex items-center justify-center gap-1.5 sm:gap-2 transition-all min-h-[40px]">
+                    <i class="fa-brands fa-digital-ocean text-sm"></i> <span>DigitalOcean</span>
+                </button>
+                <button type="button" id="tab-btn-gcp" onclick="switchProviderTab('gcp')" class="flex-1 sm:flex-none px-3 sm:px-4 py-2.5 sm:py-2 text-xs font-bold rounded-t-lg border-b-2 border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-800/40 flex items-center justify-center gap-1.5 sm:gap-2 transition-all min-h-[40px]">
+                    <i class="fa-brands fa-google text-sm"></i> <span>GCP</span>
+                </button>
+            </div>
+
+            <!-- Honeypot Sensor Selection: shared by both provider tabs below (the same choice, whichever cloud it lands on) -->
+            <div class="p-4 sm:p-6 pb-0 sm:pb-0">
+                <div class="flex items-center justify-between mb-2">
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                        Sensor type<i class="fa-regular fa-circle-question tip-icon" data-tip="Which honeypot to run. Greyed-out types can't be deployed yet."></i>
+                    </label>
+                    <span id="selected-sensor-badge" class="text-[11px] sm:text-xs font-mono text-slate-300 px-2 py-0.5 rounded bg-slate-800 border border-slate-700 truncate max-w-[200px] sm:max-w-none">
+                        Cowrie
+                    </span>
+                </div>
+                <input type="hidden" id="deploy-sensor-type" value="cowrie">
+
+                <!-- Sensor cards (rendered by app.js from /api/sensor-types) -->
+                <div id="sensor-cards-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-2.5">
+                    <div class="col-span-full p-4 rounded-lg bg-slate-900/40 border border-slate-800 text-center text-xs text-slate-500">
+                        <i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Loading sensor types...
+                    </div>
+                </div>
+
+                <!-- Active Sensor Profile Detail Callout -->
+                <div id="sensor-profile-detail" class="mt-3 p-3 rounded-lg bg-[#090d16] border border-slate-800 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                    <div class="space-y-0.5">
+                        <div class="flex items-center gap-2">
+                            <span id="profile-sensor-icon" class="text-sm text-slate-300"><i class="fa-solid fa-terminal"></i></span>
+                            <span id="profile-sensor-name" class="font-bold text-slate-200">Cowrie (SSH / Telnet Deception)</span>
+                        </div>
+                        <div id="profile-sensor-desc" class="text-[11.5px] text-slate-400 leading-snug">
+                            Medium interaction SSH &amp; Telnet honeypot designed to log brute force attacks and shell interaction.
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 shrink-0">
+                        <span class="text-[11px] text-slate-500 font-mono">Ports:</span>
+                        <div id="profile-sensor-ports" class="flex flex-wrap gap-1 font-mono text-[11px]">
+                            <span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">22/tcp</span>
+                            <span class="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">23/tcp</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel 1: DigitalOcean Form -->
+            <div id="provider-panel-do">
+                <form id="deploy-form" onsubmit="startDeployment(event)" class="p-4 sm:p-6 space-y-5 sm:space-y-6">
+                    <!-- Droplet Parameters Grid -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                        <!-- Droplet Name -->
+                        <div class="sm:col-span-2">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Name</label>
+                                <button type="button" onclick="rerollSensorName()" class="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 min-h-[30px]">
+                                    <i class="fa-solid fa-dice"></i> Reroll
+                                </button>
+                            </div>
+                            <input type="text" id="deploy-name" required placeholder="cowrie-sensor-swift-badger"
+                                class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 font-mono focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all min-h-[42px]">
+                        </div>
+
+                        <!-- Region -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Region</label>
+                            <select id="deploy-region" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 focus:border-cyan-500 outline-none min-h-[42px]">
+                                <option value="nyc1">New York 1 (NYC1)</option>
+                            </select>
+                        </div>
+
+                        <!-- Size -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Size<i class="fa-regular fa-circle-question tip-icon" data-tip="Machine size. The default is enough for a single honeypot; the multi-sensor needs 4 GB."></i></label>
+                            <select id="deploy-size" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 focus:border-cyan-500 outline-none min-h-[42px]">
+                                <option value="s-1vcpu-2gb">s-1vcpu-2gb - 2GB RAM ($12/mo)</option>
+                            </select>
+                        </div>
+
+                        <!-- SSH Key -->
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">SSH key<i class="fa-regular fa-circle-question tip-icon" data-tip="The deployer's own key (secrets/ssh_key). It is uploaded to DigitalOcean and used to configure and check every sensor."></i></label>
+                            <div id="deploy-ssh-key-info" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-300 font-mono min-h-[42px] flex items-center truncate">Loading...</div>
+                        </div>
+
+                        <!-- TTL Auto-Destroy -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                                Auto-destroy<i class="fa-regular fa-circle-question tip-icon" data-tip="The sensor is deleted automatically after this long, so you are never billed for one you forgot. You can extend it later from Fleet."></i>
+                            </label>
+                            <select id="deploy-ttl" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 focus:border-cyan-500 outline-none font-mono min-h-[42px]">
+                                <option value="1h">1 hour</option>
+                                <option value="2h" selected>2 hours</option>
+                                <option value="6h">6 hours</option>
+                                <option value="24h">1 day</option>
+                                <option value="3d">3 days</option>
+                                <option value="7d">7 days</option>
+                                <option value="">Never</option>
+                            </select>
+                        </div>
+
+                        <!-- Count -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Count</label>
+                            <input type="number" id="deploy-count" value="1" min="1" max="5" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 font-mono focus:border-cyan-500 outline-none min-h-[42px]">
+                        </div>
+                    </div>
+
+                    <!-- Toggles & Hive Integration Options -->
+                    <div class="pt-3 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-4">
+                        <!-- Toggle 1: Auto-register in Hive -->
+                        <label class="flex items-start gap-3 cursor-pointer p-3 rounded-lg bg-slate-900/40 border border-slate-800/80 hover:border-slate-700 transition-colors">
+                            <input type="checkbox" id="deploy-auto-register" checked class="mt-0.5 rounded text-cyan-500 focus:ring-0 focus:ring-offset-0 bg-slate-950 border-slate-700 w-4 h-4 shrink-0">
+                            <div>
+                                <span class="text-xs font-bold text-slate-200 block">Register in Hive<i class="fa-regular fa-circle-question tip-icon" data-tip="Creates a login for this sensor so it can send logs to the Hive. Removed again when the sensor is destroyed."></i></span>
+                            </div>
+                        </label>
+
+                        <!-- Toggle 2: Honeypot Cloud Firewall -->
+                        <label class="flex items-start gap-3 cursor-pointer p-3 rounded-lg bg-slate-900/40 border border-slate-800/80 hover:border-slate-700 transition-colors">
+                            <input type="checkbox" id="deploy-firewall" checked class="mt-0.5 rounded text-cyan-500 focus:ring-0 focus:ring-offset-0 bg-slate-950 border-slate-700 w-4 h-4 shrink-0">
+                            <div>
+                                <span class="text-xs font-bold text-slate-200 block">Cloud firewall<i class="fa-regular fa-circle-question tip-icon" data-tip="Opens the honeypot ports to the internet and locks everything else down."></i></span>
+                            </div>
+                        </label>
+
+                        <!-- Toggle 3: Restrict Admin SSH to Hive IP -->
+                        <label class="flex items-start gap-3 cursor-pointer p-3 rounded-lg bg-slate-900/40 border border-slate-800/80 hover:border-slate-700 transition-colors">
+                            <input type="checkbox" id="deploy-restrict-ssh" checked class="mt-0.5 rounded text-cyan-500 focus:ring-0 focus:ring-offset-0 bg-slate-950 border-slate-700 w-4 h-4 shrink-0">
+                            <div>
+                                <span class="text-xs font-bold text-slate-200 block">Restrict admin SSH<i class="fa-regular fa-circle-question tip-icon" data-tip="Only the Hive's IP may reach the admin SSH port (64295)."></i></span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <!-- Action Button -->
+                    <div class="flex items-center justify-end gap-3 pt-2">
+                        <button type="submit" id="btn-deploy-main" class="w-full sm:w-auto px-6 py-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm shadow-lg transition-all flex items-center justify-center gap-2 min-h-[46px]">
+                            <i class="fa-solid fa-rocket"></i> <span id="btn-deploy-main-text">Launch sensor</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Panel 2: Google Cloud Platform -->
+            <div id="provider-panel-gcp" class="hidden">
+                <form id="gcp-form" onsubmit="startGCPDeployment(event)" class="p-4 sm:p-6 space-y-5 sm:space-y-6">
+                    <!-- Instance Parameters Grid -->
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                        <!-- Instance Name -->
+                        <div class="sm:col-span-2">
+                            <div class="flex items-center justify-between mb-1.5">
+                                <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Name</label>
+                                <button type="button" onclick="rerollSensorName('gcp-name')" class="text-xs text-cyan-400 hover:text-cyan-300 flex items-center gap-1 min-h-[30px]">
+                                    <i class="fa-solid fa-dice"></i> Reroll
+                                </button>
+                            </div>
+                            <input type="text" id="gcp-name" required placeholder="cowrie-sensor-swift-badger"
+                                class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 font-mono focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 outline-none transition-all min-h-[42px]">
+                        </div>
+
+                        <!-- Zone -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Zone<i class="fa-regular fa-circle-question tip-icon" data-tip="GCP's region+zone; a dedicated tpot-sensor-vpc network and subnet are created here on first use."></i></label>
+                            <select id="gcp-zone" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 focus:border-cyan-500 outline-none min-h-[42px]">
+                                <option value="us-central1-a">us-central1-a</option>
+                            </select>
+                        </div>
+
+                        <!-- Machine Type -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Machine type<i class="fa-regular fa-circle-question tip-icon" data-tip="The default is enough for a single honeypot; the multi-sensor needs more RAM."></i></label>
+                            <select id="gcp-machine-type" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 focus:border-cyan-500 outline-none min-h-[42px]">
+                                <option value="e2-small">e2-small</option>
+                            </select>
+                        </div>
+
+                        <!-- SSH Key -->
+                        <div class="sm:col-span-2">
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">SSH key<i class="fa-regular fa-circle-question tip-icon" data-tip="The deployer's own key (secrets/ssh_key). It is injected into every GCP instance's metadata and used to configure and check it."></i></label>
+                            <div id="gcp-ssh-key-info" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-300 font-mono min-h-[42px] flex items-center truncate">Loading...</div>
+                        </div>
+
+                        <!-- TTL Auto-Destroy -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
+                                Auto-destroy<i class="fa-regular fa-circle-question tip-icon" data-tip="The sensor is deleted automatically after this long, so you are never billed for one you forgot. You can extend it later from Fleet."></i>
+                            </label>
+                            <select id="gcp-ttl" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 focus:border-cyan-500 outline-none font-mono min-h-[42px]">
+                                <option value="1h">1 hour</option>
+                                <option value="2h" selected>2 hours</option>
+                                <option value="6h">6 hours</option>
+                                <option value="24h">1 day</option>
+                                <option value="3d">3 days</option>
+                                <option value="7d">7 days</option>
+                                <option value="">Never</option>
+                            </select>
+                        </div>
+
+                        <!-- Count -->
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Count</label>
+                            <input type="number" id="gcp-count" value="1" min="1" max="5" class="w-full bg-[#090d16] border border-slate-700 rounded-lg px-3.5 py-2.5 text-sm text-slate-100 font-mono focus:border-cyan-500 outline-none min-h-[42px]">
+                        </div>
+                    </div>
+
+                    <!-- Toggles & Hive Integration Options -->
+                    <div class="pt-3 border-t border-slate-800/80 grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-4">
+                        <!-- Toggle 1: Auto-register in Hive -->
+                        <label class="flex items-start gap-3 cursor-pointer p-3 rounded-lg bg-slate-900/40 border border-slate-800/80 hover:border-slate-700 transition-colors">
+                            <input type="checkbox" id="gcp-auto-register" checked class="mt-0.5 rounded text-cyan-500 focus:ring-0 focus:ring-offset-0 bg-slate-950 border-slate-700 w-4 h-4 shrink-0">
+                            <div>
+                                <span class="text-xs font-bold text-slate-200 block">Register in Hive<i class="fa-regular fa-circle-question tip-icon" data-tip="Creates a login for this sensor so it can send logs to the Hive. Removed again when the sensor is destroyed."></i></span>
+                            </div>
+                        </label>
+
+                        <!-- Toggle 2: Honeypot Cloud Firewall -->
+                        <label class="flex items-start gap-3 cursor-pointer p-3 rounded-lg bg-slate-900/40 border border-slate-800/80 hover:border-slate-700 transition-colors">
+                            <input type="checkbox" id="gcp-firewall" checked class="mt-0.5 rounded text-cyan-500 focus:ring-0 focus:ring-offset-0 bg-slate-950 border-slate-700 w-4 h-4 shrink-0">
+                            <div>
+                                <span class="text-xs font-bold text-slate-200 block">Cloud firewall<i class="fa-regular fa-circle-question tip-icon" data-tip="Opens the honeypot ports to the internet and locks everything else down, on a dedicated tpot-sensor-vpc network."></i></span>
+                            </div>
+                        </label>
+
+                        <!-- Toggle 3: Restrict Admin SSH to Hive IP -->
+                        <label class="flex items-start gap-3 cursor-pointer p-3 rounded-lg bg-slate-900/40 border border-slate-800/80 hover:border-slate-700 transition-colors">
+                            <input type="checkbox" id="gcp-restrict-ssh" checked class="mt-0.5 rounded text-cyan-500 focus:ring-0 focus:ring-offset-0 bg-slate-950 border-slate-700 w-4 h-4 shrink-0">
+                            <div>
+                                <span class="text-xs font-bold text-slate-200 block">Restrict admin SSH<i class="fa-regular fa-circle-question tip-icon" data-tip="Only the Hive's IP may reach the admin SSH port (64295)."></i></span>
+                            </div>
+                        </label>
+                    </div>
+
+                    <!-- Action Button -->
+                    <div class="flex items-center justify-end gap-3 pt-2">
+                        <button type="submit" class="w-full sm:w-auto px-6 py-3 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-bold text-sm shadow-lg transition-all flex items-center justify-center gap-2 min-h-[46px]">
+                            <i class="fa-solid fa-rocket"></i> <span>Launch sensor</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+{% endblock %}

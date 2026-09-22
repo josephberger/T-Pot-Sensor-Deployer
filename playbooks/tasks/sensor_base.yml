@@ -1,0 +1,227 @@
+---
+# Shared deployment steps for every T-Pot sensor type.
+# The including playbook must set: sensor_type, honeypot_services (compose YAML fragment),
+# honeypot_dirs; and receive: hive_ip, tpot_hive_user, sensor_name (see defaults.yml for the rest).
+- name: Validate required variables
+  ansible.builtin.assert:
+    that:
+      - hive_ip | length > 0
+      - tpot_hive_user | length > 0
+      - sensor_name | length > 0
+    fail_msg: "hive_ip, tpot_hive_user and sensor_name must be provided as extra vars"
+
+# --- swap -------------------------------------------------------------------
+- name: Create swap file
+  ansible.builtin.command:
+    cmd: "fallocate -l {{ swap_size_gb }}G /swapfile"
+    creates: /swapfile
+  register: swapfile_created
+
+- name: Secure swap file
+  ansible.builtin.file: { path: /swapfile, owner: root, group: root, mode: "0600" }
+
+- name: Format swap
+  ansible.builtin.command: mkswap /swapfile
+  when: swapfile_created is changed
+
+- name: Enable swap
+  ansible.builtin.shell: swapon --show=NAME --noheadings | grep -qx /swapfile || swapon /swapfile
+  changed_when: false
+
+- name: Persist swap
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "/swapfile none swap sw 0 0"
+
+# --- docker -----------------------------------------------------------------
+- name: Install Docker prerequisites
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, gnupg, apt-transport-https]
+    state: present
+    update_cache: true
+    lock_timeout: 300
+
+- name: Ensure apt keyrings dir
+  ansible.builtin.file: { path: /etc/apt/keyrings, state: directory, mode: "0755" }
+
+- name: Add Docker GPG key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Add Docker apt repository
+  ansible.builtin.apt_repository:
+    repo: "deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else ansible_architecture }} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    state: present
+
+- name: Install Docker Engine and Compose plugin
+  ansible.builtin.apt:
+    name: [docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin]
+    state: present
+    update_cache: true
+    lock_timeout: 300
+
+# --- sensor files -----------------------------------------------------------
+- name: Ensure tpot group (GID 2000)
+  ansible.builtin.group: { name: tpot, gid: 2000 }
+
+- name: Ensure T-Pot user (UID 2000)
+  ansible.builtin.user:
+    name: tpot
+    uid: 2000
+    group: tpot
+    groups: [docker]
+    append: true
+    shell: /bin/false
+    create_home: false
+
+- name: Create sensor directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: tpot
+    group: tpot
+    mode: "0770"
+  loop: "{{ ['/opt/tpotce', '/data', '/data/blackhole', '/data/logstash'] + honeypot_dirs }}"
+
+- name: Install Hive CA certificate
+  ansible.builtin.copy:
+    content: "{{ hive_cert_content }}"
+    dest: /data/hive.crt
+    owner: tpot
+    group: tpot
+    mode: "0644"
+  when: hive_cert_content | length > 0
+
+- name: Write .env
+  ansible.builtin.template: { src: ../templates/tpot.env.j2, dest: /opt/tpotce/.env, mode: "0600" }
+
+- name: Ensure logstash pipeline directory
+  ansible.builtin.file: { path: /opt/tpotce/logstash, state: directory, owner: tpot, group: tpot, mode: "0755" }
+
+- name: Write trimmed logstash pipeline
+  ansible.builtin.template:
+    src: ../templates/logstash_http_output.conf.j2
+    dest: /opt/tpotce/logstash/http_output.conf
+    owner: tpot
+    group: tpot
+    mode: "0644"
+
+- name: Write docker-compose.yml
+  ansible.builtin.template: { src: ../templates/docker-compose.yml.j2, dest: /opt/tpotce/docker-compose.yml, mode: "0644" }
+
+# --- move admin SSH off port 22 (honeypots such as Cowrie need it) -----------
+# Two phases so we can never lock ourselves out:
+#   1. sshd listens on BOTH 22 and the admin port; reconnect on the admin port (proves it works)
+#   2. drop port 22 (now free for the honeypot)
+# sshd may be socket-activated (ssh.socket ACTIVE) or a plain service. The socket unit file exists on
+# every Ubuntu 24.04 image, so only its *active* state tells us which mode we are in.
+# The packaged ssh.socket binds explicit 0.0.0.0:PORT and [::]:PORT with BindIPv6Only=ipv6-only, so our
+# overrides must list both explicitly (a bare 'ListenStream=PORT' would be IPv6-only).
+- name: Relocate admin SSH
+  when: (ansible_port | default(22)) | int != admin_ssh_port | int
+  block:
+    - name: Detect socket-activated sshd
+      ansible.builtin.command: systemctl is-active ssh.socket
+      register: ssh_socket_state
+      failed_when: false
+      changed_when: false
+
+    - name: Record sshd mode
+      ansible.builtin.set_fact:
+        ssh_socket_mode: "{{ (ssh_socket_state.stdout | trim) == 'active' }}"
+
+    - name: Ensure sshd_config.d exists
+      ansible.builtin.file: { path: /etc/ssh/sshd_config.d, state: directory, mode: "0755" }
+
+    - name: Ensure ssh.socket drop-in directory
+      ansible.builtin.file: { path: /etc/systemd/system/ssh.socket.d, state: directory, mode: "0755" }
+      when: ssh_socket_mode | bool
+
+    # ---- phase 1: listen on both ports
+    - name: Phase 1 - sshd ports (22 and admin)
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/10-tpot-ports.conf
+        content: "Port 22\nPort {{ admin_ssh_port }}\n"
+        mode: "0644"
+
+    - name: Phase 1 - ssh.socket listens on 22 and admin
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/ssh.socket.d/listen.conf
+        content: "[Socket]\nListenStream=\nListenStream=0.0.0.0:22\nListenStream=[::]:22\nListenStream=0.0.0.0:{{ admin_ssh_port }}\nListenStream=[::]:{{ admin_ssh_port }}\n"
+        mode: "0644"
+      when: ssh_socket_mode | bool
+
+    - name: Phase 1 - validate sshd config
+      ansible.builtin.command: sshd -t
+      changed_when: false
+
+    - name: Phase 1 - apply (socket mode)
+      ansible.builtin.systemd: { name: ssh.socket, daemon_reload: true, state: restarted }
+      when: ssh_socket_mode | bool
+
+    - name: Phase 1 - apply (service mode)
+      ansible.builtin.systemd: { name: ssh, state: restarted }
+      when: not (ssh_socket_mode | bool)
+
+    - name: Wait for SSH on the admin port
+      ansible.builtin.wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ admin_ssh_port }}"
+        timeout: 60
+      delegate_to: localhost
+      become: false
+
+    - name: Reconnect on the admin port
+      ansible.builtin.set_fact:
+        ansible_port: "{{ admin_ssh_port }}"
+
+    - name: Drop the old connection
+      ansible.builtin.meta: reset_connection
+
+    - name: Prove the admin port works
+      ansible.builtin.ping:
+
+    # ---- phase 2: free port 22 for the honeypot
+    - name: Phase 2 - sshd port (admin only)
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/10-tpot-ports.conf
+        content: "Port {{ admin_ssh_port }}\n"
+        mode: "0644"
+
+    - name: Phase 2 - ssh.socket listens on admin only
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/ssh.socket.d/listen.conf
+        content: "[Socket]\nListenStream=\nListenStream=0.0.0.0:{{ admin_ssh_port }}\nListenStream=[::]:{{ admin_ssh_port }}\n"
+        mode: "0644"
+      when: ssh_socket_mode | bool
+
+    - name: Phase 2 - validate sshd config
+      ansible.builtin.command: sshd -t
+      changed_when: false
+
+    - name: Phase 2 - apply (socket mode)
+      ansible.builtin.systemd: { name: ssh.socket, daemon_reload: true, state: restarted }
+      when: ssh_socket_mode | bool
+
+    - name: Phase 2 - apply (service mode)
+      ansible.builtin.systemd: { name: ssh, state: restarted }
+      when: not (ssh_socket_mode | bool)
+
+    - name: Admin SSH still answers on its port
+      ansible.builtin.wait_for:
+        host: "{{ inventory_hostname }}"
+        port: "{{ admin_ssh_port }}"
+        timeout: 60
+      delegate_to: localhost
+      become: false
+
+    - name: Port 22 is free for the honeypot
+      ansible.builtin.wait_for: { host: 127.0.0.1, port: 22, state: stopped, timeout: 30 }
+
+# --- start ------------------------------------------------------------------
+- name: Start sensor stack
+  ansible.builtin.shell: docker compose pull && docker compose up -d
+  args:
+    chdir: /opt/tpotce

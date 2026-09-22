@@ -1,0 +1,193 @@
+---
+# Multi-sensor: Cowrie + Dionaea + ElasticPot + Mailoney on one machine.
+# Generated from T-Pot's compose/tpot_services.yml and docker/elk/logstash/dist/http_output.conf (T-Pot 24.04).
+# Usage (normally invoked by the deployer):
+#   ansible-playbook -i IP, playbooks/sensors/multi_sensor.yml -e @vars.json
+- name: Deploy T-Pot multi_sensor sensor
+  hosts: all
+  become: true
+  vars_files: [../defaults.yml]
+  vars:
+    sensor_type: multi_sensor
+    honeypot_dirs:
+      - /data/cowrie/downloads
+      - /data/cowrie/keys
+      - /data/cowrie/log
+      - /data/cowrie/log/tty
+      - /data/dionaea
+      - /data/dionaea/binaries
+      - /data/dionaea/log
+      - /data/dionaea/roots/ftp
+      - /data/dionaea/roots/tftp
+      - /data/dionaea/roots/upnp
+      - /data/dionaea/roots/www
+      - /data/dionaea/rtp
+      - /data/elasticpot/log
+      - /data/mailoney/log
+    honeypot_networks: [cowrie_local, dionaea_local, elasticpot_local, mailoney_local]
+    # This sensor's slice of T-Pot's log pipeline.
+    logstash_inputs:
+      - { path: /data/cowrie/log/cowrie.json, type: Cowrie }
+      - { path: /data/dionaea/log/dionaea.json, type: Dionaea }
+      - { path: /data/elasticpot/log/elasticpot.json, type: ElasticPot }
+      - { path: /data/mailoney/log/commands.log, type: Mailoney }
+    logstash_filter: |
+      if [type] == "Cowrie" {
+        date {
+          match => [ "timestamp", "ISO8601" ]
+        }
+        mutate {
+          rename => {
+            "dst_port" => "dest_port"
+            "dst_ip" => "dest_ip"
+          }
+        }
+      }
+
+      if [type] == "Dionaea" {
+        date {
+          match => [ "timestamp", "ISO8601" ]
+        }
+        mutate {
+          rename => {
+            "dst_port" => "dest_port"
+            "dst_ip" => "dest_ip"
+          }
+          gsub => [
+            "src_ip", "::ffff:", "",
+            "dest_ip", "::ffff:", ""
+          ]
+        }
+        if [credentials] {
+          mutate {
+            add_field => {
+              "username" => "%{[credentials][username]}"
+              "password" => "%{[credentials][password]}"
+            }
+            remove_field => "[credentials]"
+          }
+        }
+      }
+
+      if [type] == "ElasticPot" {
+        date {
+          match => [ "timestamp", "ISO8601" ]
+        }
+        mutate {
+          rename => {
+            "content_type" => "http.http_content_type"
+            "dst_port" => "dest_port"
+            "dst_ip" => "dest_ip"
+            "message" => "event_type"
+            "request" => "request_method"
+            "user_agent" => "http_user_agent"
+      "url" => "http.url"
+          }
+        }
+      }
+
+      if [type] == "Mailoney" {
+        date {
+          match => [ "timestamp", "ISO8601" ]
+        }
+        mutate {
+          add_field => { "dest_port" => "25" }
+        }
+      }
+    honeypot_services: |
+      cowrie:
+        container_name: cowrie
+        restart: always
+        depends_on:
+          tpotinit:
+            condition: service_healthy
+        tmpfs:
+        - /tmp/cowrie:uid=2000,gid=2000
+        - /tmp/cowrie/data:uid=2000,gid=2000
+        networks:
+        - cowrie_local
+        ports:
+        - '22:22'
+        - '23:23'
+        image: {{ tpot_repo }}/cowrie:{{ tpot_version }}
+        pull_policy: always
+        read_only: true
+        volumes:
+        - /data/cowrie/downloads:/home/cowrie/cowrie/dl
+        - /data/cowrie/keys:/home/cowrie/cowrie/etc
+        - /data/cowrie/log:/home/cowrie/cowrie/log
+        - /data/cowrie/log/tty:/home/cowrie/cowrie/log/tty
+      dionaea:
+        container_name: dionaea
+        stdin_open: true
+        tty: true
+        restart: always
+        depends_on:
+          tpotinit:
+            condition: service_healthy
+        networks:
+        - dionaea_local
+        ports:
+        - '20:20'
+        - '21:21'
+        - '42:42'
+        - 69:69/udp
+        - 81:81
+        - 135:135
+        - 445:445
+        - 1433:1433
+        - 1723:1723
+        - 1883:1883
+        - 3306:3306
+        - 27017:27017
+        image: {{ tpot_repo }}/dionaea:{{ tpot_version }}
+        pull_policy: always
+        read_only: true
+        volumes:
+        - /data/dionaea/roots/ftp:/opt/dionaea/var/dionaea/roots/ftp
+        - /data/dionaea/roots/tftp:/opt/dionaea/var/dionaea/roots/tftp
+        - /data/dionaea/roots/www:/opt/dionaea/var/dionaea/roots/www
+        - /data/dionaea/roots/upnp:/opt/dionaea/var/dionaea/roots/upnp
+        - /data/dionaea:/opt/dionaea/var/dionaea
+        - /data/dionaea/binaries:/opt/dionaea/var/dionaea/binaries
+        - /data/dionaea/log:/opt/dionaea/var/log
+        - /data/dionaea/rtp:/opt/dionaea/var/dionaea/rtp
+      elasticpot:
+        container_name: elasticpot
+        restart: always
+        depends_on:
+          tpotinit:
+            condition: service_healthy
+        networks:
+        - elasticpot_local
+        ports:
+        - 9200:9200
+        image: {{ tpot_repo }}/elasticpot:{{ tpot_version }}
+        pull_policy: always
+        read_only: true
+        volumes:
+        - /data/elasticpot/log:/opt/elasticpot/log
+      mailoney:
+        container_name: mailoney
+        restart: always
+        depends_on:
+          tpotinit:
+            condition: service_healthy
+        environment:
+        - HPFEEDS_SERVER=
+        - HPFEEDS_IDENT=user
+        - HPFEEDS_SECRET=pass
+        - HPFEEDS_PORT=20000
+        - HPFEEDS_CHANNELPREFIX=prefix
+        networks:
+        - mailoney_local
+        ports:
+        - '25:25'
+        - '587:25'
+        image: {{ tpot_repo }}/mailoney:{{ tpot_version }}
+        pull_policy: always
+        read_only: true
+        volumes:
+        - /data/mailoney/log:/opt/mailoney/logs
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/sensor_base.yml

@@ -1,0 +1,11 @@
+---
+# dionaea health check. Run against the relocated admin SSH port (-e ansible_port=64295).
+- name: Check T-Pot dionaea sensor
+  hosts: all
+  become: true
+  vars_files: [../defaults.yml]
+  vars:
+    honeypot_containers: [dionaea]
+    honeypot_ports: [20, 21, 42, 81, 135, 445, 1433, 1723, 1883, 3306, 27017]
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/health_base.yml

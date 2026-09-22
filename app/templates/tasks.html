@@ -1,0 +1,181 @@
+{% extends "base.html" %}
+
+{% block title %}Tasks{% endblock %}
+
+{% block content %}
+        <div id="section-workers" class="rounded-xl bg-[#0f172a] border border-slate-800 shadow-lg overflow-hidden scroll-mt-28">
+            <div class="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-800/80 bg-[#121c32]/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-layer-group text-slate-400"></i>
+                    <h2 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <span>Tasks and workers</span>
+                        <i class="fa-regular fa-circle-question tip-icon" data-tip="Deploys, destroys, campaign steps (every 10 s) and expiry checks (every 60 s) run in a background worker, so you can close a launch dialog and follow the run here."></i>
+                    </h2>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="worker-global-status-badge" class="px-2.5 py-1 text-[11px] font-mono font-semibold rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>Worker Online</span>
+                    </span>
+                    <button type="button" onclick="loadWorkerStatus(true)" class="p-2 text-xs text-slate-400 hover:text-white rounded-lg bg-slate-800/80 hover:bg-slate-700/80 border border-slate-700 transition-colors min-w-[36px] min-h-[36px] flex items-center justify-center" title="Refresh Worker Telemetry">
+                        <i id="worker-refresh-icon" class="fa-solid fa-rotate"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="p-4 sm:p-6 space-y-5">
+                <!-- 4 Worker Telemetry Stat Cards -->
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+                    <!-- Card 1: Workers Online -->
+                    <div class="p-3.5 rounded-xl bg-[#0a0f1d] border border-slate-800/80">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] sm:text-xs font-mono font-medium text-slate-400 uppercase tracking-wider">Workers Online</span>
+                            <i class="fa-solid fa-server text-slate-500 text-xs sm:text-sm"></i>
+                        </div>
+                        <div class="mt-2 flex items-baseline gap-1.5">
+                            <span id="worker-stat-count" class="text-xl sm:text-2xl font-mono font-bold text-white">0</span>
+                            <span class="text-[11px] text-slate-500">active</span>
+                        </div>
+                        <div class="mt-2 text-[11px] text-slate-400 border-t border-slate-800/80 pt-2 flex items-center justify-between">
+                            <span class="text-slate-500">State:</span>
+                            <span id="worker-stat-busy" class="font-mono text-slate-300">0 Busy / 0 Idle</span>
+                        </div>
+                    </div>
+
+                    <!-- Card 2: Queued Tasks -->
+                    <div class="p-3.5 rounded-xl bg-[#0a0f1d] border border-slate-800/80">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] sm:text-xs font-mono font-medium text-slate-400 uppercase tracking-wider">Jobs In Queue</span>
+                            <i class="fa-solid fa-layer-group text-slate-500 text-xs sm:text-sm"></i>
+                        </div>
+                        <div class="mt-2 flex items-baseline gap-1.5">
+                            <span id="worker-stat-pending" class="text-xl sm:text-2xl font-mono font-bold text-white">0</span>
+                            <span class="text-[11px] text-slate-500">pending</span>
+                        </div>
+                        <div class="mt-2 text-[11px] text-slate-400 border-t border-slate-800/80 pt-2 flex items-center justify-between">
+                            <span class="text-slate-500">In-Flight:</span>
+                            <span id="worker-stat-started" class="font-mono text-slate-300">0 running</span>
+                        </div>
+                    </div>
+
+                    <!-- Card 3: Completed Jobs -->
+                    <div class="p-3.5 rounded-xl bg-[#0a0f1d] border border-slate-800/80">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] sm:text-xs font-mono font-medium text-slate-400 uppercase tracking-wider">Completed<i class="fa-regular fa-circle-question tip-icon" data-tip="Recent tasks by outcome (the last 100 are kept)."></i></span>
+                            <i class="fa-solid fa-circle-check text-slate-500 text-xs sm:text-sm"></i>
+                        </div>
+                        <div class="mt-2 flex items-baseline gap-1.5">
+                            <span id="worker-stat-finished" class="text-xl sm:text-2xl font-mono font-bold text-white">0</span>
+                            <span class="text-[11px] text-slate-500">finished</span>
+                        </div>
+                        <div class="mt-2 text-[11px] text-slate-400 border-t border-slate-800/80 pt-2 flex items-center justify-between">
+                            <span class="text-slate-500">Failed:</span>
+                            <span id="worker-stat-failed" class="font-mono text-rose-400 font-semibold">0 failed</span>
+                        </div>
+                    </div>
+
+                    <!-- Card 4: Redis Broker -->
+                    <div class="p-3.5 rounded-xl bg-[#0a0f1d] border border-slate-800/80">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[10px] sm:text-xs font-mono font-medium text-slate-400 uppercase tracking-wider">Redis Broker</span>
+                            <i class="fa-solid fa-database text-slate-500 text-xs sm:text-sm"></i>
+                        </div>
+                        <div class="mt-2 flex items-baseline gap-1.5 truncate">
+                            <span id="worker-stat-redis-mem" class="text-xl sm:text-2xl font-mono font-bold text-white">0 MB</span>
+                            <span class="text-[11px] text-slate-500">RAM</span>
+                        </div>
+                        <div class="mt-2 text-[11px] text-slate-400 border-t border-slate-800/80 pt-2 flex items-center justify-between">
+                            <span class="text-slate-500">Clients:</span>
+                            <span id="worker-stat-redis-clients" class="font-mono text-slate-300">0 connected</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active & Recent Queue Tasks -->
+                <div class="space-y-3 pt-2">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-layer-group text-slate-500"></i> Active &amp; Recent Queue Tasks
+                        </h3>
+                        <span id="tasks-count-label" class="text-[11px] font-mono text-slate-400">0 tasks recorded</span>
+                    </div>
+
+                    <!-- Tasks Table (Desktop) -->
+                    <div class="hidden md:block overflow-x-auto rounded-lg border border-slate-800 bg-[#090e1a]">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b border-slate-800 text-[11px] font-mono text-slate-400 uppercase bg-[#0d1424]">
+                                    <th class="py-2.5 px-4">Task ID</th>
+                                    <th class="py-2.5 px-4">Action / Type</th>
+                                    <th class="py-2.5 px-4">Target Sensor</th>
+                                    <th class="py-2.5 px-4">Status &amp; Progress</th>
+                                    <th class="py-2.5 px-4">Last Activity</th>
+                                    <th class="py-2.5 px-4 text-right">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="tasks-table-body" class="divide-y divide-slate-800/60 text-xs">
+                                <!-- Populated dynamically via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Mobile Task Cards -->
+                    <div id="tasks-cards-list" class="block md:hidden space-y-2.5">
+                        <!-- Populated dynamically on mobile -->
+                    </div>
+
+                    <!-- Empty State for Tasks -->
+                    <div id="tasks-empty-state" class="py-8 text-center text-slate-500 border border-dashed border-slate-800 rounded-xl bg-slate-900/20 px-3">
+                        <i class="fa-solid fa-list-check text-2xl mb-2 text-slate-600"></i>
+                        <p class="text-xs font-medium text-slate-400">No background tasks queued or executed yet</p>
+                        <p class="text-[11px] text-slate-500 mt-1">Deploy a sensor or trigger a schedule to see asynchronous tasks in flight.</p>
+                    </div>
+                </div>
+
+                <!-- Workers Table (Desktop) -->
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h3 class="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-microchip text-slate-400"></i> Registered Worker Daemons
+                        </h3>
+                        <span id="workers-count-label" class="text-[11px] font-mono text-slate-500">1 worker registered</span>
+                    </div>
+
+                    <div class="hidden md:block overflow-x-auto rounded-lg border border-slate-800 bg-[#090e1a]">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="border-b border-slate-800 text-[11px] font-mono text-slate-400 uppercase bg-[#0d1424]">
+                                    <th class="py-2.5 px-4">Worker ID &amp; Host</th>
+                                    <th class="py-2.5 px-4">PID</th>
+                                    <th class="py-2.5 px-4">Status</th>
+                                    <th class="py-2.5 px-4">Current Task</th>
+                                    <th class="py-2.5 px-4">Queues</th>
+                                    <th class="py-2.5 px-4">Completed / Failed</th>
+                                    <th class="py-2.5 px-4">Last Heartbeat</th>
+                                </tr>
+                            </thead>
+                            <tbody id="workers-table-body" class="divide-y divide-slate-800/60 text-xs">
+                                <!-- Populated dynamically via JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Mobile Worker Cards -->
+                    <div id="workers-cards-list" class="block md:hidden space-y-2.5">
+                        <!-- Populated dynamically on mobile -->
+                    </div>
+
+                    <!-- Empty State -->
+                    <div id="workers-empty-state" class="hidden text-center py-8 border border-dashed border-rose-900/40 rounded-xl bg-rose-950/10 p-4">
+                        <i class="fa-solid fa-triangle-exclamation text-3xl text-rose-500 mb-2"></i>
+                        <p class="text-xs sm:text-sm font-semibold text-rose-300">No active background workers registered</p>
+                        <p class="text-[11px] text-slate-400 max-w-md mx-auto mt-1">Deployments and campaign tasks will queue up in Redis but won't execute until a worker process connects.</p>
+                        <div class="mt-3 font-mono text-[11px] text-slate-300 bg-black/40 px-3 py-1.5 rounded inline-block border border-slate-800">
+                            docker compose up -d worker
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+{% endblock %}

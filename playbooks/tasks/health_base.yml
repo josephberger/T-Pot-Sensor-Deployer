@@ -1,0 +1,75 @@
+---
+# Shared health checks. The including playbook sets: honeypot_containers, honeypot_ports.
+- name: List running containers
+  ansible.builtin.command: docker ps --format "{{ '{{.Names}}' }}"
+  register: running
+  changed_when: false
+
+- name: Expected containers are running
+  ansible.builtin.assert:
+    that: item in running.stdout_lines
+    fail_msg: "container '{{ item }}' is not running"
+    success_msg: "container '{{ item }}' is running"
+  loop: "{{ ['tpotinit', 'logstash'] + honeypot_containers }}"
+
+# Logstash needs ~40s to load its pipeline and a heap crash can happen after that, so wait for the
+# pipeline to be running rather than trusting the container's healthcheck.
+- name: Logstash pipeline is running
+  ansible.builtin.shell: docker exec logstash curl -s --max-time 5 localhost:9600/_node/stats/pipelines | grep -q '"http_output"'
+  register: ls_pipeline
+  retries: 24
+  delay: 10
+  until: ls_pipeline.rc == 0
+  changed_when: false
+
+- name: Logstash has not run out of heap
+  ansible.builtin.shell: |
+    docker logs logstash 2>&1 | grep -E 'OutOfMemoryError: Java heap space|uncaught error' || true
+  register: ls_oom
+  changed_when: false
+  failed_when: ls_oom.stdout | length > 0
+
+- name: Container restart state
+  ansible.builtin.command: docker inspect -f "{{ '{{.State.Status}} {{.RestartCount}}' }}" {{ item }}
+  loop: "{{ ['tpotinit', 'logstash'] + honeypot_containers }}"
+  register: container_state
+  changed_when: false
+
+# Docker reports "healthy" for a JVM stuck in GC after an OutOfMemoryError, so look at restarts too.
+- name: Containers are not crash-looping
+  ansible.builtin.assert:
+    that:
+      - item.stdout.split()[0] == 'running'
+      - item.stdout.split()[1] | int < 2
+    fail_msg: "container '{{ item.item }}' is crash-looping ({{ item.stdout }}); for logstash this usually means too little RAM (needs a 1 GB heap; use a 4 GB droplet)"
+    success_msg: "container '{{ item.item }}' is stable ({{ item.stdout }})"
+  loop: "{{ container_state.results }}"
+  loop_control: { label: "{{ item.item }}" }
+
+- name: Honeypot ports are listening
+  ansible.builtin.wait_for: { host: 127.0.0.1, port: "{{ item }}", timeout: 5 }
+  loop: "{{ honeypot_ports }}"
+
+# Warning only: whether a sensor may reach the Hive is decided by a firewall we do not control
+# (e.g. a Palo Alto EDL). The sensor itself is fine; it just cannot ship logs yet.
+- name: Hive ingestion port is reachable from the sensor
+  ansible.builtin.wait_for: { host: "{{ hive_ip }}", port: "{{ hive_port }}", timeout: 10 }
+  register: hive_probe
+  ignore_errors: true
+  when: hive_ip | default('') | length > 0
+
+- name: Warn when the sensor cannot reach the Hive
+  ansible.builtin.debug:
+    msg: "TPOT_WARNING: sensor cannot reach the Hive at {{ hive_ip }}:{{ hive_port }}; logs will not ship until the firewall admits this sensor's IP (the EDL is published as soon as the sensor has an IP; the firewall refreshes it about every 5 minutes, so this may clear on its own)"
+  when: hive_probe is failed
+
+- name: Disk usage
+  ansible.builtin.shell: df --output=pcent / | tail -1 | tr -dc '0-9'
+  register: disk_pct
+  changed_when: false
+
+- name: Disk is not nearly full
+  ansible.builtin.assert:
+    that: disk_pct.stdout | int < 90
+    fail_msg: "root filesystem is {{ disk_pct.stdout }}% full"
+    success_msg: "root filesystem {{ disk_pct.stdout }}% used"

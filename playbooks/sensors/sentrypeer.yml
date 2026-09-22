@@ -1,0 +1,50 @@
+---
+# SentryPeer: SIP (VoIP) honeypot.
+# Generated from T-Pot's compose/tpot_services.yml and docker/elk/logstash/dist/http_output.conf (T-Pot 24.04).
+# Usage (normally invoked by the deployer):
+#   ansible-playbook -i IP, playbooks/sensors/sentrypeer.yml -e @vars.json
+- name: Deploy T-Pot sentrypeer sensor
+  hosts: all
+  become: true
+  vars_files: [../defaults.yml]
+  vars:
+    sensor_type: sentrypeer
+    honeypot_dirs:
+      - /data/sentrypeer/log
+    honeypot_networks: [sentrypeer_local]
+    # This sensor's slice of T-Pot's log pipeline.
+    logstash_inputs:
+      - { path: /data/sentrypeer/log/sentrypeer.json, type: Sentrypeer }
+    logstash_filter: |
+      if [type] == "Sentrypeer" {
+        date {
+          match => [ "event_timestamp", "yyyy-MM-dd HH:mm:ss.SSSSSSSSS" ]
+          remove_field => ["event_timestamp"]
+        }
+        mutate {
+          rename => {
+            "source_ip" => "src_ip"
+            "destination_ip" => "dest_ip"
+          }
+          add_field => { "dest_port" => "5060" }
+        }
+      }
+    honeypot_services: |
+      sentrypeer:
+        container_name: sentrypeer
+        restart: always
+        depends_on:
+          tpotinit:
+            condition: service_healthy
+        networks:
+        - sentrypeer_local
+        ports:
+        - 5060:5060/tcp
+        - 5060:5060/udp
+        image: {{ tpot_repo }}/sentrypeer:{{ tpot_version }}
+        pull_policy: always
+        read_only: true
+        volumes:
+        - /data/sentrypeer/log:/var/log/sentrypeer
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/sensor_base.yml

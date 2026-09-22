@@ -1,0 +1,50 @@
+---
+# Cowrie: SSH/Telnet honeypot. Usage (normally invoked by the deployer):
+#   ansible-playbook -i IP, playbooks/sensors/cowrie.yml -e @vars.json
+- name: Deploy T-Pot Cowrie sensor
+  hosts: all
+  become: true
+  vars_files: [../defaults.yml]
+  vars:
+    sensor_type: cowrie
+    honeypot_dirs:
+      - /data/cowrie/downloads
+      - /data/cowrie/keys
+      - /data/cowrie/log
+      - /data/cowrie/log/tty
+    honeypot_networks: [cowrie_local]
+    # This sensor's slice of T-Pot's log pipeline (from T-Pot's stock http_output.conf).
+    logstash_inputs:
+      - { path: /data/cowrie/log/cowrie.json, type: Cowrie }
+    logstash_filter: |
+      if [type] == "Cowrie" {
+        date {
+          match => [ "timestamp", "ISO8601" ]
+        }
+        mutate {
+          rename => {
+            "dst_port" => "dest_port"
+            "dst_ip" => "dest_ip"
+          }
+        }
+      }
+    honeypot_services: |
+      cowrie:
+        container_name: cowrie
+        restart: always
+        depends_on: { tpotinit: { condition: service_healthy } }
+        tmpfs:
+          - /tmp/cowrie:uid=2000,gid=2000
+          - /tmp/cowrie/data:uid=2000,gid=2000
+        networks: [cowrie_local]
+        ports: ["22:22", "23:23"]
+        image: {{ tpot_repo }}/cowrie:{{ tpot_version }}
+        pull_policy: always
+        read_only: true
+        volumes:
+          - /data/cowrie/downloads:/home/cowrie/cowrie/dl
+          - /data/cowrie/keys:/home/cowrie/cowrie/etc
+          - /data/cowrie/log:/home/cowrie/cowrie/log
+          - /data/cowrie/log/tty:/home/cowrie/cowrie/log/tty
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/sensor_base.yml

@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Summary cards -->
+<div class="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+    <div class="p-3.5 sm:p-5 rounded-xl bg-[#0f172a] border border-slate-800 shadow-sm">
+        <div class="flex items-center justify-between">
+            <span class="text-[10px] sm:text-xs font-mono font-medium text-slate-400 uppercase tracking-wider">Hive<i class="fa-regular fa-circle-question tip-icon" data-tip="The T-Pot Hive that sensors ship their logs to (port 64294)."></i></span>
+            <i class="fa-solid fa-server text-slate-500 text-xs sm:text-base"></i>
+        </div>
+        <div class="mt-2 sm:mt-3 flex items-baseline gap-1 sm:gap-2 truncate">
+            <span id="hive-ip-display" class="text-sm sm:text-xl font-mono font-bold text-white truncate">Detecting...</span>
+            <span class="text-xs font-mono text-slate-500 hidden sm:inline">:<span id="hive-port-display">64294</span></span>
+        </div>
+        <div class="mt-2 sm:mt-3 flex items-center justify-between text-[11px] sm:text-xs text-slate-400 border-t border-slate-800/80 pt-2 sm:pt-2.5">
+            <span data-tip="Log-shipping logins registered in the Hive. There is one per sensor; extras are leftovers you can remove on Admin.">Sensor logins</span>
+            <span id="hive-sensors-count" class="font-mono text-slate-200 font-semibold">0</span>
+        </div>
+    </div>
+
+    <div class="p-3.5 sm:p-5 rounded-xl bg-[#0f172a] border border-slate-800 shadow-sm">
+        <div class="flex items-center justify-between">
+            <span class="text-[10px] sm:text-xs font-mono font-medium text-slate-400 uppercase tracking-wider">Fleet</span>
+            <i class="fa-solid fa-satellite-dish text-slate-500 text-xs sm:text-base"></i>
+        </div>
+        <div class="mt-2 sm:mt-3 flex items-baseline gap-1.5">
+            <span id="active-sensors-count" class="text-xl sm:text-2xl font-mono font-bold text-white">0</span>
+            <span class="text-[11px] sm:text-xs text-slate-500">sensors</span>
+        </div>
+        <div class="mt-2 sm:mt-3 flex items-center justify-between text-[11px] sm:text-xs text-slate-400 border-t border-slate-800/80 pt-2 sm:pt-2.5">
+            <span>Manage</span>
+            <a href="#" data-app-path="/fleet" class="text-cyan-400 hover:underline">Fleet <i class="fa-solid fa-arrow-right text-[9px]"></i></a>
+        </div>
+    </div>
+
+    <div class="p-3.5 sm:p-5 rounded-xl bg-[#0f172a] border border-slate-800 shadow-sm">
+        <div class="flex items-center justify-between">
+            <span class="text-[10px] sm:text-xs font-mono font-medium text-slate-400 uppercase tracking-wider">Open ports<i class="fa-regular fa-circle-question tip-icon" data-tip="Honeypot ports currently exposed to the internet by your sensors."></i></span>
+            <i class="fa-solid fa-network-wired text-slate-500 text-xs sm:text-base"></i>
+        </div>
+        <div id="exposure-ports" class="mt-2 sm:mt-3 flex items-center flex-wrap gap-1 font-mono text-[11px] sm:text-sm text-slate-300">
+            <span class="text-slate-500 text-xs">none</span>
+        </div>
+        <div class="mt-2 sm:mt-3 flex items-center justify-between text-[11px] sm:text-xs text-slate-400 border-t border-slate-800/80 pt-2 sm:pt-2.5">
+            <span data-tip="SSH used to manage sensors. The cloud firewall allows it only from the Hive.">Admin SSH</span>
+            <span class="font-mono text-slate-200 font-semibold">64295</span>
+        </div>
+    </div>
+
+    <div class="p-3.5 sm:p-5 rounded-xl bg-[#0f172a] border border-slate-800 shadow-sm">
+        <div class="flex items-center justify-between">
+            <span class="text-[10px] sm:text-xs font-mono font-medium text-slate-400 uppercase tracking-wider">Firewall list<i class="fa-regular fa-circle-question tip-icon" data-tip="IPs published to your Palo Alto EDL: sensors that are running or being set up, plus any static entries."></i></span>
+            <i class="fa-solid fa-shield-halved text-slate-500 text-xs sm:text-base"></i>
+        </div>
+        <div class="mt-2 sm:mt-3 flex items-baseline gap-1.5">
+            <span id="edl-ip-count" class="text-xl sm:text-2xl font-mono font-bold text-white">0</span>
+            <span class="text-[11px] sm:text-xs text-slate-500">IPs</span>
+        </div>
+        <div class="mt-2 sm:mt-3 flex items-center justify-between text-[11px] sm:text-xs text-slate-400 border-t border-slate-800/80 pt-2 sm:pt-2.5">
+            <span>Details</span>
+            <a href="#" data-app-path="/edl" class="text-cyan-400 hover:underline">EDL <i class="fa-solid fa-arrow-right text-[9px]"></i></a>
+        </div>
+    </div>
+</div>
+
+<!-- Quick actions -->
+<div class="flex items-center gap-2 flex-wrap">
+    <a href="#" data-app-path="/deploy" class="px-3.5 py-2 text-xs font-bold rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 transition-all flex items-center gap-1.5 shadow min-h-[36px]">
+        <i class="fa-solid fa-rocket"></i> Deploy sensor
+    </a>
+    <button onclick="syncDropletsWithCloud()" id="btn-sync-droplets" class="px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all flex items-center gap-1.5 min-h-[36px]" data-tip="Compare the fleet with what DigitalOcean actually has, and pick up anything created or deleted outside this app.">
+        <i class="fa-solid fa-rotate"></i> Sync fleet
+    </button>
+    <button onclick="openStaticIPModal()" class="px-3.5 py-2 text-xs font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-all flex items-center gap-1.5 min-h-[36px]" data-tip="Add an IP or subnet to the firewall list by hand, for example a hardware honeypot.">
+        <i class="fa-solid fa-plus"></i> Add static IP
+    </button>
+</div>
+
+<!-- Summaries -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+    <div class="rounded-xl bg-[#0f172a] border border-slate-800 shadow-lg overflow-hidden flex flex-col">
+        <div class="px-5 py-3.5 border-b border-slate-800/80 bg-[#121c32]/50 flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <i class="fa-solid fa-list-check text-slate-400"></i> Sensors
+                <i class="fa-regular fa-circle-question tip-icon" data-tip="Deployed honeypots and when each one will be destroyed."></i>
+            </h3>
+            <a href="#" data-app-path="/fleet" class="text-xs font-mono text-cyan-400 hover:text-cyan-300">Fleet <i class="fa-solid fa-arrow-right text-[10px]"></i></a>
+        </div>
+        <div class="p-5">
+            <div id="dashboard-fleet-list" class="space-y-2">
+                <div class="p-4 rounded-lg bg-slate-900/50 border border-slate-800/80 text-center text-xs text-slate-500">
+                    <i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="rounded-xl bg-[#0f172a] border border-slate-800 shadow-lg overflow-hidden flex flex-col">
+        <div class="px-5 py-3.5 border-b border-slate-800/80 bg-[#121c32]/50 flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <i class="fa-solid fa-clock-rotate-left text-slate-400"></i> Campaigns
+                <i class="fa-regular fa-circle-question tip-icon" data-tip="Recurring runs that destroy a sensor and rebuild it later on a fresh IP address, so scanners can't fingerprint a fixed address."></i>
+            </h3>
+            <a href="#" data-app-path="/campaigns" class="text-xs font-mono text-cyan-400 hover:text-cyan-300">Campaigns <i class="fa-solid fa-arrow-right text-[10px]"></i></a>
+        </div>
+        <div class="p-5">
+            <div id="dashboard-schedules-summary" class="space-y-2">
+                <div class="p-4 rounded-lg bg-slate-900/50 border border-slate-800/80 text-center text-xs text-slate-500">
+                    <i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="rounded-xl bg-[#0f172a] border border-slate-800 shadow-lg overflow-hidden flex flex-col">
+        <div class="px-5 py-3.5 border-b border-slate-800/80 bg-[#121c32]/50 flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <i class="fa-solid fa-shield-halved text-slate-400"></i> Firewall feed
+                <i class="fa-regular fa-circle-question tip-icon" data-tip="Paste this URL into a Palo Alto External Dynamic List so the firewall admits new sensors to the Hive automatically."></i>
+            </h3>
+            <a href="#" data-app-path="/edl" class="text-xs font-mono text-cyan-400 hover:text-cyan-300">EDL <i class="fa-solid fa-arrow-right text-[10px]"></i></a>
+        </div>
+        <div class="p-5">
+            <div class="bg-[#090d16] border border-slate-800 rounded-lg p-2.5 flex items-center gap-2">
+                <input type="text" id="edl-full-url" readonly value="Loading..."
+                    class="flex-1 bg-transparent font-mono text-xs text-slate-200 outline-none select-all truncate">
+                <button type="button" onclick="copyEDLUrl()" class="px-3 py-1 text-xs font-semibold rounded bg-slate-700 hover:bg-slate-600 text-slate-100 transition-all flex items-center gap-1 shrink-0">
+                    <i class="fa-regular fa-copy"></i> Copy
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="rounded-xl bg-[#0f172a] border border-slate-800 shadow-lg overflow-hidden flex flex-col">
+        <div class="px-5 py-3.5 border-b border-slate-800/80 bg-[#121c32]/50 flex items-center justify-between">
+            <h3 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                <i class="fa-solid fa-layer-group text-slate-400"></i> Recent tasks
+                <i class="fa-regular fa-circle-question tip-icon" data-tip="Deploys and destroys run in the background worker, so you can close a launch dialog and follow it here."></i>
+            </h3>
+            <a href="#" data-app-path="/tasks" class="text-xs font-mono text-cyan-400 hover:text-cyan-300">Tasks <i class="fa-solid fa-arrow-right text-[10px]"></i></a>
+        </div>
+        <div class="p-5">
+            <div id="dashboard-tasks-summary" class="space-y-2">
+                <div class="p-4 rounded-lg bg-slate-900/50 border border-slate-800/80 text-center text-xs text-slate-500">
+                    <i class="fa-solid fa-circle-notch fa-spin mr-2"></i> Loading...
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

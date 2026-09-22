@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Fleet{% endblock %}
+
+{% block content %}
+        <div id="section-fleet" class="rounded-xl bg-[#0f172a] border border-slate-800 shadow-lg overflow-hidden scroll-mt-28">
+            <div class="px-4 sm:px-6 py-3 sm:py-4 border-b border-slate-800/80 bg-[#121c32]/50 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-list-check text-slate-400"></i>
+                    <h2 class="text-xs sm:text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                        <span>Sensors</span>
+                        <span id="active-sensors-count" class="text-xs font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-200 border border-slate-700">0</span>
+                        <i class="fa-regular fa-circle-question tip-icon" data-tip="Every honeypot sensor this deployer is tracking, including ones being set up. Each is destroyed automatically when its auto-destroy time is up."></i>
+                    </h2>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="syncDropletsWithCloud()" id="btn-sync-droplets" class="text-xs text-slate-300 hover:text-white flex items-center gap-1.5 font-mono min-h-[36px]" data-tip="Compare this list with what DigitalOcean actually has, and pick up anything created or deleted outside this app." data-tip-left>
+                        <i class="fa-solid fa-rotate"></i> <span>Sync</span>
+                    </button>
+                    <button onclick="loadDroplets()" class="text-xs text-slate-300 hover:text-white flex items-center gap-1.5 font-mono min-h-[36px]" data-tip="Reload the list from the local database (no cloud call)." data-tip-left>
+                        <i class="fa-solid fa-arrows-rotate"></i> <span>Refresh</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Desktop Fleet Table (Visible on md+ screens) -->
+            <div class="hidden md:block overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-800 text-[11px] font-mono text-slate-400 uppercase bg-[#090e1a]/80">
+                            <th class="py-3 px-4">Sensor</th>
+                            <th class="py-3 px-4">Type</th>
+                            <th class="py-3 px-4">Public IP</th>
+                            <th class="py-3 px-4">Ports</th>
+                            <th class="py-3 px-4">Status</th>
+                            <th class="py-3 px-4" data-tip="Time left before the sensor is destroyed. + extends it, x removes the limit.">Auto-destroy</th>
+                            <th class="py-3 px-4 text-right">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="droplets-table-body">
+                        <!-- Loaded dynamically on desktop -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Mobile Fleet Cards (Visible on mobile screens) -->
+            <div id="droplets-cards-list" class="block md:hidden p-3 space-y-3">
+                <!-- Loaded dynamically on mobile -->
+            </div>
+
+            <!-- Empty State -->
+            <div id="droplets-empty-state" class="hidden py-10 sm:py-12 text-center text-slate-500 px-3">
+                <i class="fa-solid fa-satellite-dish text-3xl sm:text-4xl mb-2 sm:mb-3 text-slate-600"></i>
+                <p class="text-xs sm:text-sm font-medium text-slate-400">No sensors yet</p>
+                <p class="text-[11px] sm:text-xs text-slate-500 mt-1">Deploy one from the <a href="#" data-app-path="/deploy" class="text-cyan-400 hover:underline">Deploy</a> page.</p>
+            </div>
+        </div>
+
+{% endblock %}

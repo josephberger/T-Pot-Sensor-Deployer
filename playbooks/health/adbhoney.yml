@@ -1,0 +1,11 @@
+---
+# adbhoney health check. Run against the relocated admin SSH port (-e ansible_port=64295).
+- name: Check T-Pot adbhoney sensor
+  hosts: all
+  become: true
+  vars_files: [../defaults.yml]
+  vars:
+    honeypot_containers: [adbhoney]
+    honeypot_ports: [5555]
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/health_base.yml

@@ -1,0 +1,44 @@
+---
+# ADBHoney: Android Debug Bridge honeypot.
+# Generated from T-Pot's compose/tpot_services.yml and docker/elk/logstash/dist/http_output.conf (T-Pot 24.04).
+# Usage (normally invoked by the deployer):
+#   ansible-playbook -i IP, playbooks/sensors/adbhoney.yml -e @vars.json
+- name: Deploy T-Pot adbhoney sensor
+  hosts: all
+  become: true
+  vars_files: [../defaults.yml]
+  vars:
+    sensor_type: adbhoney
+    honeypot_dirs:
+      - /data/adbhoney/downloads
+      - /data/adbhoney/log
+    honeypot_networks: [adbhoney_local]
+    # This sensor's slice of T-Pot's log pipeline.
+    logstash_inputs:
+      - { path: /data/adbhoney/log/adbhoney.json, type: Adbhoney }
+    logstash_filter: |
+      if [type] == "Adbhoney" {
+        date {
+          match => [ "timestamp", "ISO8601" ]
+          remove_field => ["unixtime"]
+        }
+      }
+    honeypot_services: |
+      adbhoney:
+        container_name: adbhoney
+        restart: always
+        depends_on:
+          tpotinit:
+            condition: service_healthy
+        networks:
+        - adbhoney_local
+        ports:
+        - 5555:5555
+        image: {{ tpot_repo }}/adbhoney:{{ tpot_version }}
+        pull_policy: always
+        read_only: true
+        volumes:
+        - /data/adbhoney/log:/opt/adbhoney/log
+        - /data/adbhoney/downloads:/opt/adbhoney/dl
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/sensor_base.yml

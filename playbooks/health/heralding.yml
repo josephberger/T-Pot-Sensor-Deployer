@@ -1,0 +1,11 @@
+---
+# heralding health check. Run against the relocated admin SSH port (-e ansible_port=64295).
+- name: Check T-Pot heralding sensor
+  hosts: all
+  become: true
+  vars_files: [../defaults.yml]
+  vars:
+    honeypot_containers: [heralding]
+    honeypot_ports: [110, 143, 465, 993, 995, 1080, 5432, 5900]
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/health_base.yml

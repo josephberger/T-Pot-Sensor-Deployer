@@ -1,0 +1,116 @@
+/* Cyber Dark Theme Custom Styles for T-Pot Sensor Deployer */
+:root {
+  --bg-dark: #0a0e17;
+  --bg-card: #111827;
+  --bg-card-hover: #1f2937;
+  --border-color: #1f293d;
+  --cyan-glow: #06b6d4;
+  --green-glow: #10b981;
+  --accent-purple: #8b5cf6;
+}
+
+body {
+  background-color: var(--bg-dark);
+  color: #e2e8f0;
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.terminal-box {
+  background: #050811;
+  border: 1px solid #1e293b;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+}
+
+.glow-cyan {
+  box-shadow: 0 0 15px rgba(6, 182, 212, 0.25);
+}
+
+.glow-green {
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.25);
+}
+
+.border-glow:focus {
+  border-color: #06b6d4;
+  box-shadow: 0 0 10px rgba(6, 182, 212, 0.3);
+  outline: none;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* Animations */
+@keyframes pulse-subtle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(1.02); }
+}
+
+.pulse-live {
+  animation: pulse-subtle 2.5s infinite ease-in-out;
+}
+
+/* Range input styling */
+input[type=range] {
+  accent-color: #06b6d4;
+}
+
+.badge-ttl {
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+.badge-active {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+/* Mobile & Touch Optimizations */
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent iOS Safari auto-zoom on input focus */
+@media (max-width: 640px) {
+  input[type="text"],
+  input[type="password"],
+  input[type="number"],
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Touch targets and tap response */
+button:active,
+.sensor-select-card:active {
+  transform: scale(0.98);
+  transition: transform 0.08s ease;
+}
+
+/* Smooth momentum touch scrolling for tables and terminal boxes */
+.overflow-x-auto,
+.overflow-y-auto,
+.terminal-box {
+  -webkit-overflow-scrolling: touch;
+}
+

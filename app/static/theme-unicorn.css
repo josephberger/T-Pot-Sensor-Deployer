@@ -1,0 +1,73 @@
+/* Pink Unicorn: the deployer's one alternate theme (medium-dark plum with pink, lavender and baby-blue accents).
+   Loaded only when localStorage.theme === "unicorn". It re-colours the Tailwind utility classes the pages use,
+   so no template needs to know about it. Palette and flourishes follow the theme-kit "unicorn" theme. */
+html[data-theme="unicorn"] {
+    --u-bg: #2b1536; --u-card: #3a1d49; --u-card-hi: #48245b; --u-inset: #26102f;
+    --u-border: #6e3f86; --u-border-hi: #8a54a5;
+    --u-text: #fff0f9; --u-text-2: #f0cfe9; --u-muted: #d9a9d6; --u-faint: #b985b8;
+    --u-pink: #ff8fd8; --u-pink-hi: #ff6bcb; --u-lav: #b28fff; --u-blue: #8fd8ff;
+}
+html[data-theme="unicorn"], html[data-theme="unicorn"] body { background: var(--u-bg) !important; color: var(--u-text); }
+html[data-theme="unicorn"] body { background-image: radial-gradient(circle at 12% 0%, rgba(255,143,216,.16), transparent 42%), radial-gradient(circle at 92% 8%, rgba(143,216,255,.12), transparent 40%) !important; background-attachment: fixed !important; }
+
+/* surfaces */
+html[data-theme="unicorn"] [class*="bg-[#0"] { background-color: var(--u-card) !important; }
+html[data-theme="unicorn"] [class*="bg-[#090d16"], html[data-theme="unicorn"] [class*="bg-[#060a12"], html[data-theme="unicorn"] [class*="bg-[#070b1"] { background-color: var(--u-inset) !important; }
+html[data-theme="unicorn"] [class*="bg-[#121c32"], html[data-theme="unicorn"] [class*="bg-[#131d36"] { background-color: var(--u-card-hi) !important; }
+html[data-theme="unicorn"] [class*="bg-slate-9"] { background-color: rgba(38,16,47,.7) !important; }
+html[data-theme="unicorn"] [class*="bg-slate-8"], html[data-theme="unicorn"] [class*="bg-slate-7"] { background-color: #55296b !important; }
+html[data-theme="unicorn"] [class*="hover:bg-slate-7"]:hover, html[data-theme="unicorn"] [class*="hover:bg-slate-6"]:hover { background-color: #6a3684 !important; }
+html[data-theme="unicorn"] header, html[data-theme="unicorn"] nav { background: linear-gradient(90deg, #8a3d86, #6b4bb0, #3d78a8) !important; border-color: var(--u-border-hi) !important; }
+html[data-theme="unicorn"] nav { background: rgba(58,29,73,.92) !important; }
+html[data-theme="unicorn"] .bg-black\/80 { background-color: rgba(30,8,40,.82) !important; }
+
+/* borders */
+html[data-theme="unicorn"] [class*="border-slate-"] { border-color: var(--u-border) !important; }
+html[data-theme="unicorn"] [class*="divide-slate-"] > * + * { border-color: var(--u-border) !important; }
+
+/* text */
+html[data-theme="unicorn"] .text-white, html[data-theme="unicorn"] [class*="text-slate-100"], html[data-theme="unicorn"] [class*="text-slate-200"] { color: var(--u-text) !important; }
+html[data-theme="unicorn"] [class*="text-slate-300"] { color: var(--u-text-2) !important; }
+html[data-theme="unicorn"] [class*="text-slate-400"] { color: var(--u-muted) !important; }
+html[data-theme="unicorn"] [class*="text-slate-500"], html[data-theme="unicorn"] [class*="text-slate-600"] { color: var(--u-faint) !important; }
+html[data-theme="unicorn"] input, html[data-theme="unicorn"] select, html[data-theme="unicorn"] textarea { color: var(--u-text) !important; }
+html[data-theme="unicorn"] input::placeholder { color: var(--u-faint) !important; }
+
+/* accent: cyan becomes pink */
+html[data-theme="unicorn"] [class*="text-cyan-"] { color: #ffa8e2 !important; }
+html[data-theme="unicorn"] [class*="bg-cyan-500/"], html[data-theme="unicorn"] [class*="bg-cyan-400/"] { background-color: rgba(255,143,216,.2) !important; }
+html[data-theme="unicorn"] [class*="border-cyan-"] { border-color: rgba(255,143,216,.5) !important; }
+html[data-theme="unicorn"] [class*="focus:border-cyan"]:focus, html[data-theme="unicorn"] [class*="focus:border-amber"]:focus { border-color: var(--u-pink) !important; box-shadow: 0 0 0 3px rgba(255,143,216,.25); }
+html[data-theme="unicorn"] .bg-cyan-500, html[data-theme="unicorn"] .bg-cyan-400, html[data-theme="unicorn"] .hover\:bg-cyan-400:hover {
+    background: linear-gradient(90deg, var(--u-pink), var(--u-lav)) !important; color: #3a1040 !important; border-radius: 999px;
+    animation: unicorn-glow 2.6s ease-in-out infinite;
+}
+html[data-theme="unicorn"] .bg-cyan-500:hover { background: linear-gradient(90deg, var(--u-pink-hi), #9a70ff) !important; }
+html[data-theme="unicorn"] .bg-amber-500 { background: linear-gradient(90deg, #ffc9e3, var(--u-blue)) !important; color: #3a1040 !important; }
+
+/* shape */
+html[data-theme="unicorn"] .rounded-lg { border-radius: 14px !important; }
+html[data-theme="unicorn"] .rounded-xl { border-radius: 18px !important; }
+html[data-theme="unicorn"] .rounded-2xl { border-radius: 24px !important; }
+html[data-theme="unicorn"] button.rounded-lg, html[data-theme="unicorn"] a.rounded-lg { border-radius: 999px !important; }
+html[data-theme="unicorn"] [class*="shadow"] { box-shadow: 0 8px 24px rgba(178,143,255,.22) !important; }
+
+/* progress bars */
+html[data-theme="unicorn"] [class*="bg-cyan-500"][style*="width"], html[data-theme="unicorn"] [class*="bg-emerald-500"][style*="width"] { background: linear-gradient(90deg, var(--u-pink), var(--u-lav), var(--u-blue)) !important; }
+
+/* flourishes: unicorn mark, sparkly headings, a corner rainbow */
+html[data-theme="unicorn"] header a[data-app-path="/"] > div:first-child { background: linear-gradient(135deg, var(--u-pink), var(--u-lav), var(--u-blue)) !important; border-color: #fff8 !important; animation: unicorn-glow 2.6s ease-in-out infinite; }
+html[data-theme="unicorn"] header a[data-app-path="/"] > div:first-child i { display: none; }
+html[data-theme="unicorn"] header a[data-app-path="/"] > div:first-child::before { content: "\1F984"; font-size: 1.3rem; }
+html[data-theme="unicorn"] h3:not(.no-sparkle)::after { content: "\2728"; font-size: .8em; margin-left: .15rem; }
+html[data-theme="unicorn"] body::after { content: "\1F308 \1F984 \2728"; position: fixed; right: 12px; bottom: 8px; font-size: 18px; letter-spacing: 4px; opacity: .85; pointer-events: none; z-index: 5; }
+html[data-theme="unicorn"] .tip-icon { color: var(--u-blue) !important; }
+
+@keyframes unicorn-glow { 0%, 100% { box-shadow: 0 0 6px rgba(255,143,216,.5); } 50% { box-shadow: 0 0 16px rgba(178,143,255,.7); } }
+@keyframes unicorn-pop { 0% { transform: translateY(0) scale(.6); opacity: 1; } 100% { transform: translateY(-220px) scale(1.4) rotate(40deg); opacity: 0; } }
+.unicorn-confetti { position: fixed; bottom: 20%; font-size: 26px; pointer-events: none; z-index: 100; animation: unicorn-pop 1.4s ease-out forwards; }
+
+@media (prefers-reduced-motion: reduce) {
+    html[data-theme="unicorn"] *, .unicorn-confetti { animation: none !important; transition: none !important; }
+    .unicorn-confetti { display: none; }
+}

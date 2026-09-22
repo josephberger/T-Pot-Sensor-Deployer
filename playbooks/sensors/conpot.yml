@@ -1,0 +1,60 @@
+---
+# Conpot: industrial control system (ICS/SCADA) honeypot.
+# Generated from T-Pot's compose/tpot_services.yml and docker/elk/logstash/dist/http_output.conf (T-Pot 24.04).
+# Usage (normally invoked by the deployer):
+#   ansible-playbook -i IP, playbooks/sensors/conpot.yml -e @vars.json
+- name: Deploy T-Pot conpot sensor
+  hosts: all
+  become: true
+  vars_files: [../defaults.yml]
+  vars:
+    sensor_type: conpot
+    honeypot_dirs:
+      - /data/conpot/log
+    honeypot_networks: [conpot_local_default]
+    # This sensor's slice of T-Pot's log pipeline.
+    logstash_inputs:
+      - { path: /data/conpot/log/*.json, type: ConPot }
+    logstash_filter: |
+      if [type] == "ConPot" {
+        date {
+          match => [ "timestamp", "ISO8601" ]
+        }
+        mutate {
+          rename => {
+            "dst_port" => "dest_port"
+            "dst_ip" => "dest_ip"
+          }
+        }
+      }
+    honeypot_services: |
+      conpot_default:
+        container_name: conpot_default
+        restart: always
+        depends_on:
+          tpotinit:
+            condition: service_healthy
+        environment:
+        - CONPOT_CONFIG=/etc/conpot/conpot.cfg
+        - CONPOT_JSON_LOG=/var/log/conpot/conpot_default.json
+        - CONPOT_LOG=/var/log/conpot/conpot_default.log
+        - CONPOT_TEMPLATE=default
+        - CONPOT_TMP=/tmp/conpot
+        tmpfs:
+        - /tmp/conpot:uid=2000,gid=2000
+        networks:
+        - conpot_local_default
+        ports:
+        - 80:80
+        - 102:102
+        - 161:161/udp
+        - 502:502
+        - 44818:44818
+        - 47808:47808/udp
+        image: {{ tpot_repo }}/conpot:{{ tpot_version }}
+        pull_policy: always
+        read_only: true
+        volumes:
+        - /data/conpot/log:/var/log/conpot
+  tasks:
+    - ansible.builtin.import_tasks: ../tasks/sensor_base.yml
