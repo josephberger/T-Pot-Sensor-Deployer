@@ -45,7 +45,8 @@ drops the Sensor Deployer link - with nothing to tell you it happened.
 
 ## Applying it
 
-After T-Pot is installed and running:
+If your T-Pot install is the same version this was taken from (24.04.0) and you haven't
+customized the landing page yourself, just overwrite it - after T-Pot is installed and running:
 
 ```bash
 cp hive-landing-page/index.html "$TPOT_HOST_DIR/data/nginx/conf/index.html"
@@ -60,3 +61,18 @@ rather than overwriting blind:
 ```bash
 diff "$TPOT_HOST_DIR/data/nginx/conf/index.html" hive-landing-page/index.html
 ```
+
+### Newer/different T-Pot version: add just the link
+
+A future T-Pot release can change this template (new tools, a redesign) enough that overwriting
+the whole file would lose those changes. The actual edit is one line - open
+`$TPOT_HOST_DIR/data/nginx/conf/index.html` and find the box of tool links (look for the ones
+already there: Attack Map, Cyberchef, Elasticvue, Kibana, Spiderfoot - a `<div class="... tools-box"
+...>` containing a list of `<a class="link" ...>` tags). Add this line among them, before that
+div's closing `</div>`:
+
+```html
+<a href="/sensors/" class="link" target="_blank">Sensor Deployer</a>
+```
+
+That's the whole change - no other file, script, or restart involved.
