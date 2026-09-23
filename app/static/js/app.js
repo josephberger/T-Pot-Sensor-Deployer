@@ -1717,6 +1717,14 @@ function selectSchedulePreset(presetId) {
         if (document.getElementById("sched-cooldown-max")) document.getElementById("sched-cooldown-max").value = "72h";
         rotateCheck.checked = true;
         if (sensorTypeSelect) sensorTypeSelect.value = "cowrie";
+    } else if (presetId === "daily_6h") {
+        setActiveBtn("preset-btn-daily", "border-cyan-500 bg-cyan-950/20", "text-cyan-400");
+        nameInput.value = "Daily 6h Prime-Time Trap";
+        activeDurInput.value = "6h";
+        modeSelect.value = "interval";
+        if (document.getElementById("sched-cooldown-dur")) document.getElementById("sched-cooldown-dur").value = "18h";
+        rotateCheck.checked = false;
+        if (sensorTypeSelect) sensorTypeSelect.value = "cowrie";
     } else if (presetId === "dionaea_malware_48h") {
         setActiveBtn("preset-btn-dionaea", "border-amber-500 bg-amber-950/20", "text-amber-400");
         nameInput.value = "Dionaea 48h Malware Trap (SMB/RPC)";
@@ -1848,6 +1856,7 @@ function onScheduleModeChange() {
 
 function createPresetSchedule(presetId) {
     selectSchedulePreset(presetId);
+    onScheduleProviderChange();  // swap the modal's placeholder regions/sizes for the live ones
     openModal("create-schedule-modal");
 }
 
