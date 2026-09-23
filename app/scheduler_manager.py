@@ -522,7 +522,7 @@ class SchedulerManager:
         if not droplet_id or ttl_seconds <= 0:
             return
         provider = config.get("provider", "digitalocean")
-        region = config.get("zone") if provider == "gcp" else config.get("region")
+        region = config.get("zone") if provider == "gcp" else (state.get("current_region") or config.get("region"))
         try:
             TTLManager(self.db_path).schedule_lease(
                 droplet_id=droplet_id,
@@ -944,6 +944,7 @@ class SchedulerManager:
             state["current_droplet_id"] = droplet_id
             state["current_droplet_name"] = sensor_name
             state["current_sensor_user"] = sensor_user
+            state["current_region"] = region  # the rotated region, which config["region"] doesn't reflect
             state["hive_token"] = creds["tpot_hive_user"]  # needed later by the configure step; stripped from API output
             state["stage"] = "waiting_ip"
             state["current_public_ip"] = None
@@ -1043,7 +1044,7 @@ class SchedulerManager:
             # region carries the GCP zone for a GCP row, same convention active_droplets/leases use
             # everywhere else. This used to always default to "digitalocean"/config["region"] regardless
             # of the schedule's actual provider - harmless while GCP campaigns didn't exist for real.
-            region = config.get("zone", "us-central1-a") if provider == "gcp" else config.get("region", "nyc1")
+            region = config.get("zone", "us-central1-a") if provider == "gcp" else (state.get("current_region") or config.get("region", "nyc1"))
             size = config.get("machine_type", "e2-small") if provider == "gcp" else config.get("size", "s-1vcpu-2gb")
             db_save_active_droplet(Sensor(
                 id=droplet_id,
@@ -1230,7 +1231,7 @@ class SchedulerManager:
                         sensor_type = config.get("sensor_type", "cowrie")
                         db_save_active_droplet(Sensor(
                             id=droplet_id, name=state["current_droplet_name"] or f"sensor-{droplet_id}", public_ip=pub_ip, sensor_type=sensor_type,
-                            sensor_user=state.get("current_sensor_user"), region=config.get("region", "nyc1"),
+                            sensor_user=state.get("current_sensor_user"), region=state.get("current_region") or config.get("region", "nyc1"),
                             size=config.get("size", "s-1vcpu-2gb"), image=config.get("image", "ubuntu-24-04-x64"),
                             tags=[f"sched-{schedule_id}", "tpot-sensor", f"type-{sensor_type}"],
                             status=SensorStatus.PROVISIONING.value, created_at=now.isoformat(),
