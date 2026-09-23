@@ -26,6 +26,7 @@ from app.models import Sensor, SensorStatus
 from app.ansible_runner import ansible_available, playbook_for, private_key_path, supported_sensor_types
 from app.provisioning import configure_and_verify
 from app.cloud import get_client
+from app.queue_manager import record_task, publish_task_log, set_task_status, update_task_meta, get_recent_tasks
 
 logger = logging.getLogger("scheduler")
 
@@ -150,7 +151,8 @@ class SchedulerManager:
             for sid, s in schedules.items():
                 db_save_schedule(s, self.db_path)
 
-    def _log_event(self, schedule_id: str, message: str, level: str = "INFO"):
+    def _log_event(self, schedule_id: str, message: str, level: str = "INFO",
+                   task_id: Optional[str] = None, percent: Optional[int] = None):
         log_path = LOGS_DIR / "scheduler.log"
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         try:
@@ -158,6 +160,87 @@ class SchedulerManager:
                 f.write(f"[{timestamp}] [{level}] [Schedule {schedule_id}] {message}\n")
         except Exception:
             pass
+        if task_id:
+            try:
+                publish_task_log(task_id, message, percent=percent, level=level.lower())
+            except Exception as e:
+                logger.debug(f"Could not publish campaign task log for {schedule_id}: {e}")
+
+    def _log(self, schedule: dict, message: str, level: str = "INFO", percent: Optional[int] = None):
+        """_log_event for code that has the schedule: also sends the line to the cycle's task, if any."""
+        self._log_event(schedule["id"], message, level, task_id=schedule.get("state", {}).get("task_id"), percent=percent)
+
+    # --- Campaign tasks --------------------------------------------------------------------------
+    # Each deploy attempt and each teardown is a task on the Tasks page, like a manual deploy. The task
+    # id lives in state["task_id"] (not in memory), because one cycle can span processes: "Deploy now"
+    # dispatches from the web container, and the worker's tick and configure thread finish it. The
+    # scheduler, not the worker's startup reaper, decides when a campaign task ends (see
+    # reap_interrupted_tasks and reap_orphaned_campaign_tasks).
+
+    def _task_begin(self, schedule: dict, kind: str) -> Optional[str]:
+        state = schedule.setdefault("state", {})
+        # A task still open here belongs to an operation that's being overridden (e.g. a teardown of a
+        # cycle that never finished configuring) - close it rather than leave it "running" forever.
+        self._task_end(schedule, "failed", error=f"Stopped before it finished: a campaign {kind} started")
+        task_id = str(uuid.uuid4())
+        cycle = state.get("cycle_number", 0) + 1 if kind == "deploy" else state.get("cycle_number", 0)
+        try:
+            record_task(
+                task_id=task_id,
+                task_type=f"campaign_{kind}",
+                type_label="Campaign deploy" if kind == "deploy" else "Campaign teardown",
+                sensor_name=state.get("current_droplet_name") or schedule.get("name") or schedule["id"],
+                sensor_type=schedule.get("sensor_type") or schedule.get("config", {}).get("sensor_type", "cowrie"),
+                status="running",
+                meta_extra={"campaign_id": schedule["id"], "campaign_name": schedule.get("name") or "", "cycle": cycle},
+            )
+        except Exception as e:
+            logger.debug(f"Could not record campaign task for {schedule['id']}: {e}")
+            return None
+        state["task_id"] = task_id
+        state["last_task_id"] = task_id
+        return task_id
+
+    def _task_rename(self, schedule: dict, sensor_name: str):
+        task_id = schedule.get("state", {}).get("task_id")
+        if task_id:
+            try:
+                update_task_meta(task_id, sensor_name=sensor_name)
+            except Exception:
+                pass
+
+    def _task_end(self, schedule: dict, status: str, error: Optional[str] = None,
+                  deployed: Optional[List[dict]] = None, message: Optional[str] = None):
+        state = schedule.get("state", {})
+        task_id = state.pop("task_id", None)
+        if not task_id:
+            return
+        try:
+            if message:
+                publish_task_log(task_id, message)
+            # The error needs no log line of its own: the stream viewer prints it from the final status.
+            set_task_status(task_id, status, deployed=deployed, error=error)
+        except Exception as e:
+            logger.debug(f"Could not close campaign task {task_id}: {e}")
+
+    def reap_orphaned_campaign_tasks(self) -> int:
+        """Worker startup: fail campaign tasks still marked running that no campaign claims any more
+        (deleted campaign, or state that moved on without closing its task). A task a campaign still
+        points at is left alone - the scheduler finishes or fails it itself."""
+        with self._lock:
+            schedules = self._load_schedules()
+        claimed = {s.get("state", {}).get("task_id") for s in schedules.values()}
+        reaped = 0
+        for t in get_recent_tasks(limit=100):
+            if str(t.get("task_type", "")).startswith("campaign_") and t.get("status") == "running" and t["id"] not in claimed:
+                try:
+                    msg = "Interrupted: no campaign is tracking this task any more"
+                    publish_task_log(t["id"], msg, level="error")
+                    set_task_status(t["id"], "failed", error=msg)
+                    reaped += 1
+                except Exception:
+                    pass
+        return reaped
 
     def list_schedules(self) -> List[dict]:
         """Returns all schedules augmented with live status and time calculations."""
@@ -515,6 +598,7 @@ class SchedulerManager:
                 self._execute_destroy(s)
             except Exception as e:
                 logger.error(f"Error destroying sensor during schedule deletion: {e}")
+        self._task_end(s, "failed", error="Campaign deleted before this operation finished")
 
         self._log_event(schedule_id, "Schedule deleted.")
         return True
@@ -643,6 +727,7 @@ class SchedulerManager:
                 f"Retrying with backoff in {backoff_minutes}m.",
                 "WARN"
             )
+        self._task_end(schedule, "failed", error=state["last_message"])
 
     def _async_gcp_provision_worker(self, schedule_id: str, ctx: dict):
         """Background thread for a GCP cycle: create the instance, then configure it over SSH with
@@ -686,6 +771,7 @@ class SchedulerManager:
                 st["current_droplet_id"] = instance["id"]
                 st["current_public_ip"] = instance.get("public_ip")
                 st["last_message"] = f"Instance {ctx['sensor_name']} is up at {instance.get('public_ip')}; configuring sensor over SSH (Ansible)..."
+                self._log(s, f"Instance {ctx['sensor_name']} is up at {instance.get('public_ip')}. Configuring over SSH...", percent=40)
                 # Record and publish the IP now (not after health), same principle as DO: the firewall
                 # needs the feed to list this sensor before it can admit it to the Hive.
                 try:
@@ -714,11 +800,11 @@ class SchedulerManager:
                 admin_ssh_port=ctx["admin_ssh_port"],
                 swap_size_gb=get_sensor_type(ctx["sensor_type"]).get("swap_size_gb", 2),
                 remote_ssh_user=GCP_SSH_USER,
-                on_log=lambda line: self._log_event(schedule_id, f"[ansible] {line}", "DEBUG"),
-                on_step=lambda msg, pct: self._log_event(schedule_id, msg),
+                on_log=lambda line: self._log_event(schedule_id, f"[ansible] {line}", "DEBUG", task_id=ctx.get("task_id")),
+                on_step=lambda msg, pct: self._log_event(schedule_id, msg, task_id=ctx.get("task_id"), percent=pct),
             )
             for w in warnings:
-                self._log_event(schedule_id, f"WARNING: {w}", "WARN")
+                self._log_event(schedule_id, f"WARNING: {w}", "WARN", task_id=ctx.get("task_id"))
         except Exception as e:
             error = str(e) or type(e).__name__
             logger.warning(f"Campaign {schedule_id} GCP provisioning failed: {error}")
@@ -778,6 +864,7 @@ class SchedulerManager:
 
         hive_mgr = HiveManager()
         now = datetime.now(timezone.utc)
+        self._task_begin(schedule, "deploy")
 
         if provider == "gcp":
             from app.gcp_client import GCPClient
@@ -813,7 +900,7 @@ class SchedulerManager:
             image = load_config().get("gcp_image") or "projects/ubuntu-os-cloud/global/images/family/ubuntu-2404-lts-amd64"
 
             try:
-                self._log_event(schedule_id, "Dispatching scheduled GCP honeypot deployment...")
+                self._log(schedule, "Dispatching scheduled GCP honeypot deployment...", percent=5)
 
                 if config.get("attach_firewall", True):
                     try:
@@ -824,16 +911,17 @@ class SchedulerManager:
                             admin_ssh_port=config.get("admin_ssh_port", 64295),
                         )
                     except Exception as fw_err:
-                        self._log_event(schedule_id, f"Firewall configuration failed: {fw_err}", "WARN")
+                        self._log(schedule, f"Firewall configuration failed: {fw_err}", "WARN")
 
                 name_prefix = config.get("name_prefix") or f"{sensor_type}-sched"
                 creds = hive_mgr.generate_sensor_credentials(name_prefix=name_prefix)
                 sensor_name = creds["username"]
                 sensor_user = creds["username"]
+                self._task_rename(schedule, sensor_name)
 
                 if config.get("auto_register_hive", True):
                     ok, msg = hive_mgr.register_sensor(creds)
-                    self._log_event(schedule_id, f"Registered sensor '{sensor_user}' into Hive: {msg}")
+                    self._log(schedule, f"Registered sensor '{sensor_user}' into Hive: {msg}", percent=20)
 
                 deadline = now + timedelta(minutes=PROVISIONING_TIMEOUT_MINUTES)
                 state["status"] = "provisioning"
@@ -857,6 +945,7 @@ class SchedulerManager:
                     "sensor_user": sensor_user, "hive_token": creds["tpot_hive_user"], "sensor_type": sensor_type,
                     "admin_ssh_port": config.get("admin_ssh_port", 64295),
                     "network_tags": ["tpot-sensor", f"tpot-{sensor_type}-sensor"],
+                    "task_id": state.get("task_id"),
                 }
                 _CONFIGURING.add(schedule_id)
                 threading.Thread(target=self._async_gcp_provision_worker, args=(schedule_id, ctx), daemon=True).start()
@@ -878,7 +967,7 @@ class SchedulerManager:
         sensor_type = config.get("sensor_type", "cowrie")
 
         try:
-            self._log_event(schedule_id, "Dispatching scheduled honeypot deployment cycle...")
+            self._log(schedule, "Dispatching scheduled honeypot deployment cycle...", percent=5)
 
             # 0. Preflight: refuse before creating (and paying for) anything we can't configure afterwards.
             if not playbook_for("sensors", sensor_type):
@@ -898,7 +987,7 @@ class SchedulerManager:
                 last_idx = config.get("last_region_idx", 0)
                 region = pool[last_idx % len(pool)]
                 config["last_region_idx"] = last_idx + 1
-                self._log_event(schedule_id, f"Rotating to region: {region.upper()}")
+                self._log(schedule, f"Rotating to region: {region.upper()}")
 
             # 2. SSH key: always the deployer's own key. Ansible logs in with it, and a droplet created
             #    without a key makes DigitalOcean email a root password.
@@ -917,21 +1006,22 @@ class SchedulerManager:
                         admin_ssh_port=config.get("admin_ssh_port", 64295)
                     )
                 except Exception as fw_err:
-                    self._log_event(schedule_id, f"Firewall configuration failed: {fw_err}", "WARN")
+                    self._log(schedule, f"Firewall configuration failed: {fw_err}", "WARN")
 
             # 4. Hive credentials & registration
             name_prefix = config.get("name_prefix") or f"{sensor_type}-sched"
             creds = hive_mgr.generate_sensor_credentials(name_prefix=name_prefix)
             sensor_name = creds["username"]
             sensor_user = creds["username"]
+            self._task_rename(schedule, sensor_name)
 
             if config.get("auto_register_hive", True):
                 ok, msg = hive_mgr.register_sensor(creds)
-                self._log_event(schedule_id, f"Registered sensor '{sensor_user}' into Hive: {msg}")
+                self._log(schedule, f"Registered sensor '{sensor_user}' into Hive: {msg}", percent=20)
 
             # 5. Create a BARE droplet (no user-data): STRICTLY DYNAMIC IP, NON-BLOCKING. Configuration happens
             #    over SSH with Ansible once the droplet has an IP (see _reconcile_provisioning).
-            self._log_event(schedule_id, f"Creating droplet '{sensor_name}' [{sensor_type}] in {region} ({config.get('size')})...")
+            self._log(schedule, f"Creating droplet '{sensor_name}' [{sensor_type}] in {region} ({config.get('size')})...", percent=25)
             try:
                 droplet = client.create_droplet(
                     name=sensor_name,
@@ -965,7 +1055,7 @@ class SchedulerManager:
             state["last_action_at"] = now.isoformat()
             state["last_message"] = f"Droplet {sensor_name} (ID {droplet_id}) created. Provisioning in-flight, awaiting dynamic IP..."
 
-            self._log_event(schedule_id, f"Droplet requested (ID {droplet_id}). State set to 'provisioning' with {PROVISIONING_TIMEOUT_MINUTES}m deadline.")
+            self._log(schedule, f"Droplet requested (ID {droplet_id}). Waiting for its IP (deadline {PROVISIONING_TIMEOUT_MINUTES}m)...", percent=30)
             return True, f"Dispatched droplet {sensor_name} (ID {droplet_id})"
 
         except Exception as e:
@@ -993,7 +1083,7 @@ class SchedulerManager:
         provider = config.get("provider", "digitalocean")
         droplet_id = state.get("current_droplet_id")
         droplet_name = state.get("current_droplet_name")
-        self._log_event(schedule_id, f"Provisioning failed: {reason}", "ERROR")
+        self._log(schedule, f"Provisioning failed: {reason}", "ERROR")
 
         if droplet_id:
             try:
@@ -1006,13 +1096,13 @@ class SchedulerManager:
             if droplet_name:
                 try:
                     get_client("gcp").destroy_instance(droplet_name, config.get("zone", "us-central1-a"))
-                    self._log_event(schedule_id, f"Destroyed failed instance {droplet_name}.")
+                    self._log(schedule, f"Destroyed failed instance {droplet_name}.")
                 except Exception as de:
                     logger.warning(f"Could not destroy failed GCP instance {droplet_name}: {de}")
         elif droplet_id and do_client and do_client.is_configured():
             try:
                 do_client.destroy_droplet(droplet_id)
-                self._log_event(schedule_id, f"Destroyed failed droplet {droplet_id}.")
+                self._log(schedule, f"Destroyed failed droplet {droplet_id}.")
             except Exception as de:
                 logger.warning(f"Could not destroy failed droplet {droplet_id}: {de}")
 
@@ -1038,11 +1128,11 @@ class SchedulerManager:
         droplet_id = state.get("current_droplet_id")
         pub_ip = state.get("current_public_ip")
         droplet_name = state.get("current_droplet_name") or f"sensor-{droplet_id}"
-        self._log_event(schedule_id, f"Sensor {droplet_name} is configured and healthy at fresh dynamic IP {pub_ip}")
+        self._log(schedule, f"Sensor {droplet_name} is configured and healthy at fresh dynamic IP {pub_ip}")
 
         try:
             EDLManager().write_edl_file(do_client=do_client)
-            self._log_event(schedule_id, f"Updated Palo Alto EDL with dynamic IP: {pub_ip}")
+            self._log(schedule, f"Updated Palo Alto EDL with dynamic IP: {pub_ip}")
         except Exception as edl_err:
             logger.error(f"EDL update error: {edl_err}")
 
@@ -1098,6 +1188,10 @@ class SchedulerManager:
         )
         if paused:
             state["last_message"] += " Campaign is paused: the teardown timer runs once it's resumed."
+        self._task_end(schedule, "completed", message=state["last_message"], deployed=[{
+            "id": droplet_id, "name": droplet_name, "ip": pub_ip,
+            "user": state.get("current_sensor_user"), "sensor_type": config.get("sensor_type", "cowrie"),
+        }])
 
     def _async_do_configure_worker(self, schedule_id: str, ctx: dict):
         """Background thread: configure a freshly created droplet over SSH with Ansible, verify health,
@@ -1123,11 +1217,11 @@ class SchedulerManager:
                 hive_token=ctx["hive_token"],
                 admin_ssh_port=ctx["admin_ssh_port"],
                 swap_size_gb=get_sensor_type(ctx["sensor_type"]).get("swap_size_gb", 2),
-                on_log=lambda line: self._log_event(schedule_id, f"[ansible] {line}", "DEBUG"),
-                on_step=lambda msg, pct: self._log_event(schedule_id, msg),
+                on_log=lambda line: self._log_event(schedule_id, f"[ansible] {line}", "DEBUG", task_id=ctx.get("task_id")),
+                on_step=lambda msg, pct: self._log_event(schedule_id, msg, task_id=ctx.get("task_id"), percent=pct),
             )
             for w in warnings:
-                self._log_event(schedule_id, f"WARNING: {w}", "WARN")
+                self._log_event(schedule_id, f"WARNING: {w}", "WARN", task_id=ctx.get("task_id"))
         except Exception as e:
             error = str(e) or type(e).__name__
             logger.warning(f"Campaign {schedule_id} configure failed: {error}")
@@ -1227,7 +1321,7 @@ class SchedulerManager:
                 pub_ip = drop_data.get("public_ip")
 
                 if drop_status == "active" and pub_ip:
-                    self._log_event(schedule_id, f"Droplet {droplet_id} is ACTIVE with fresh dynamic IP: {pub_ip}. Configuring over SSH...")
+                    self._log(schedule, f"Droplet {droplet_id} is ACTIVE with fresh dynamic IP: {pub_ip}. Configuring over SSH...", percent=40)
                     state["stage"] = "configuring"
                     state["current_public_ip"] = pub_ip
                     state["current_droplet_name"] = drop_data.get("name") or state.get("current_droplet_name")
@@ -1239,6 +1333,7 @@ class SchedulerManager:
                         "hive_token": state.get("hive_token", ""),
                         "sensor_type": config.get("sensor_type", "cowrie"),
                         "admin_ssh_port": config.get("admin_ssh_port", 64295),
+                        "task_id": state.get("task_id"),
                     }
                     # Record and publish the IP now (not after health): the firewall needs the feed to list this
                     # sensor before it can admit it to the Hive, and configuring takes minutes.
@@ -1272,6 +1367,17 @@ class SchedulerManager:
         return False
 
     def _execute_destroy(self, schedule: dict) -> Tuple[bool, str]:
+        """Teardown wrapped in its own campaign task (see _execute_destroy_inner)."""
+        self._task_begin(schedule, "destroy")
+        try:
+            ok, msg = self._execute_destroy_inner(schedule)
+        except Exception as e:
+            self._task_end(schedule, "failed", error=f"Teardown failed: {e}")
+            raise
+        self._task_end(schedule, "completed", message=schedule.get("state", {}).get("last_message"))
+        return ok, msg
+
+    def _execute_destroy_inner(self, schedule: dict) -> Tuple[bool, str]:
         """
         Executes a teardown cycle for an active scheduled honeypot: destroys the droplet/instance,
         cancels its backstop lease, releases the IP, cleans credentials, and calculates next rebuild.
@@ -1300,7 +1406,7 @@ class SchedulerManager:
         hive_mgr = HiveManager()
         edl_mgr = EDLManager()
 
-        self._log_event(schedule_id, f"Teardown initiated for {provider.upper()} sensor {droplet_name}...")
+        self._log(schedule, f"Teardown initiated for {provider.upper()} sensor {droplet_name}...", percent=10)
 
         if droplet_id:
             try:
@@ -1313,29 +1419,29 @@ class SchedulerManager:
             if droplet_name:
                 try:
                     get_client("gcp").destroy_instance(droplet_name, config.get("zone", "us-central1-a"))
-                    self._log_event(schedule_id, f"Destroyed instance {droplet_name}. Dynamic IP {old_ip} released.")
+                    self._log(schedule, f"Destroyed instance {droplet_name}. Dynamic IP {old_ip} released.")
                 except Exception as e:
-                    self._log_event(schedule_id, f"Instance destroy note: {e}", "WARN")
+                    self._log(schedule, f"Instance destroy note: {e}", "WARN")
         elif droplet_id:
             if client and client.is_configured():
                 try:
                     client.destroy_droplet(droplet_id)
-                    self._log_event(schedule_id, f"Destroyed droplet {droplet_id}. Dynamic IP {old_ip} released.")
+                    self._log(schedule, f"Destroyed droplet {droplet_id}. Dynamic IP {old_ip} released.")
                 except Exception as e:
-                    self._log_event(schedule_id, f"Droplet destroy note: {e}", "WARN")
+                    self._log(schedule, f"Droplet destroy note: {e}", "WARN")
 
         # Clean Hive credentials
         if sensor_user and config.get("auto_register_hive", True):
             try:
                 hive_mgr.deregister_sensor(sensor_user)
-                self._log_event(schedule_id, f"Deregistered Hive user '{sensor_user}'.")
+                self._log(schedule, f"Deregistered Hive user '{sensor_user}'.")
             except Exception:
                 pass
 
         # Update Palo Alto EDL
         try:
             edl_mgr.write_edl_file(do_client=client)
-            self._log_event(schedule_id, "Updated Palo Alto EDL (removed expired sensor IP).")
+            self._log(schedule, "Updated Palo Alto EDL (removed expired sensor IP).")
         except Exception:
             pass
 
@@ -1374,7 +1480,7 @@ class SchedulerManager:
         state["last_action_at"] = now.isoformat()
         state["last_message"] = f"Teardown complete. Cooling down until next rebuild at {next_rebuild_at.strftime('%Y-%m-%d %H:%M:%S UTC')}."
 
-        self._log_event(schedule_id, f"Entered cooldown state. Next fresh rebuild scheduled for {next_rebuild_at.isoformat()}")
+        self._log(schedule, f"Entered cooldown state. Next fresh rebuild scheduled for {next_rebuild_at.isoformat()}")
         return True, "Teardown complete."
 
     def reconcile_tick(self) -> bool:

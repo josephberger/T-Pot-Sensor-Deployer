@@ -100,6 +100,14 @@ def main():
     failed = db_fail_interrupted_provisioning()
     if reaped or failed:
         logger.warning(f"Marked {reaped} interrupted task(s) and {failed} half-provisioned sensor(s) as failed.")
+    # Campaign tasks are skipped above: the scheduler ends the ones a campaign still tracks itself.
+    try:
+        from app.scheduler_manager import SchedulerManager
+        orphaned = SchedulerManager().reap_orphaned_campaign_tasks()
+        if orphaned:
+            logger.warning(f"Marked {orphaned} orphaned campaign task(s) as failed.")
+    except Exception as e:
+        logger.warning(f"Could not check for orphaned campaign tasks: {e}")
 
     # Start the background periodic scheduler loop inside this worker process
     scheduler = SchedulerThread(tick_interval=10.0, ttl_interval=60.0)

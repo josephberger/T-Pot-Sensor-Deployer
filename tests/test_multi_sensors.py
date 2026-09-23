@@ -5,6 +5,9 @@ _os.environ["DATA_DIR"] = _tempfile.mkdtemp(prefix="tpot-test-")
 # The T-Pot Hive is LIVE config (lswebpasswd + .env): tests must never resolve to the real one.
 _os.environ["TPOT_DIR"] = _tempfile.mkdtemp(prefix="tpot-test-hive-")
 _os.environ["SECRETS_DIR"] = _tempfile.mkdtemp(prefix="tpot-test-secrets-")
+# Tasks live in Redis and show on the live Tasks page: point at a closed port so the task layer uses
+# its in-memory fallback (these tests run inside the web container, where REDIS_URL is the real one).
+_os.environ["REDIS_URL"] = "redis://127.0.0.1:1/0"
 _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
 import sys
@@ -787,6 +790,94 @@ def test_trimmed_logstash_pipeline():
     print("  ✓ Compose mounts the trimmed pipeline over the stock one and sets the heap from a variable")
 
 
+def test_campaign_tasks_track_each_cycle():
+    print("\n=== Testing campaign tasks (one per deploy attempt and per teardown) ===")
+    from pathlib import Path
+    from unittest.mock import MagicMock, patch
+    import app.scheduler_manager as sm
+    import app.do_client
+    from app.queue_manager import get_task_status, get_task_logs, record_task, reap_interrupted_tasks
+
+    sched = sm.SchedulerManager()
+    sm.load_config = lambda: {"hive_ip": "192.0.2.10"}
+    client = MagicMock()
+    client.ensure_ssh_key.return_value = "77"
+    client.create_droplet.return_value = {"id": 515151}
+
+    with patch.object(sm, "get_do_token", return_value="tok"), \
+         patch.object(sm, "ansible_available", return_value=True), \
+         patch.object(sm, "private_key_path", return_value=Path(__file__)), \
+         patch.object(sm, "get_local_ssh_pubkey", return_value=(Path("k.pub"), "ssh-ed25519 AAAA test")), \
+         patch.object(app.do_client, "DOClient", return_value=client), \
+         patch("app.hive_manager.HiveManager.register_sensor", return_value=(True, "ok")), \
+         patch("app.hive_manager.HiveManager.deregister_sensor", return_value=(True, "ok")), \
+         patch("app.edl_manager.EDLManager.write_edl_file", return_value=None):
+        s = sched.create_schedule({"name": "Task Test", "sensor_type": "cowrie", "start_immediately": False})
+
+        # Dispatch opens a running deploy task, named after the droplet, tagged with the campaign
+        ok, _ = sched._dispatch_deploy(s)
+        assert ok
+        tid = s["state"]["task_id"]
+        assert s["state"]["last_task_id"] == tid
+        t = get_task_status(tid)
+        assert t["status"] == "running" and t["task_type"] == "campaign_deploy"
+        assert t["campaign_id"] == s["id"] and t["campaign_name"] == "Task Test" and t["cycle"] == "1"
+        assert t["sensor_name"] == s["state"]["current_droplet_name"]
+        assert any("Creating droplet" in e["message"] for e in get_task_logs(tid))
+        print("  ✓ Dispatch opens a running 'Campaign deploy' task named after the droplet")
+
+        # The worker's restart reaper must leave it alone (a waiting_ip cycle survives a restart)
+        reap_interrupted_tasks()
+        assert get_task_status(tid)["status"] == "running"
+        print("  ✓ Worker restart reaper skips campaign tasks")
+
+        # Configured and healthy -> completed, with the sensor in 'deployed'
+        s["state"]["current_public_ip"] = "198.51.100.7"
+        sched._finalize_active(s, None)
+        t = get_task_status(tid)
+        assert t["status"] == "completed" and t["deployed"][0]["ip"] == "198.51.100.7"
+        assert "task_id" not in s["state"] and s["state"]["last_task_id"] == tid
+        print("  ✓ Finalize completes the task and records the sensor")
+
+        # Teardown is its own task
+        ok, _ = sched._execute_destroy(s)
+        did = s["state"]["last_task_id"]
+        assert ok and did != tid
+        d = get_task_status(did)
+        assert d["status"] == "completed" and d["task_type"] == "campaign_destroy" and d["cycle"] == "1"
+        assert any("Teardown initiated" in e["message"] for e in get_task_logs(did))
+        print("  ✓ Teardown runs as its own completed 'Campaign teardown' task")
+
+        # A failed attempt fails its task with the backoff message
+        client.create_droplet.side_effect = RuntimeError("DO API down")
+        ok, _ = sched._dispatch_deploy(s)
+        f = get_task_status(s["state"]["last_task_id"])
+        assert not ok and f["status"] == "failed" and "DO API down" in f["error"] and "Backoff retry" in f["error"]
+        print("  ✓ A failed attempt fails its task, with the retry/backoff outcome as the error")
+
+        # Deleting a campaign mid-cycle closes its open task
+        client.create_droplet.side_effect = None
+        s2 = sched.create_schedule({"name": "Delete Mid-Cycle", "sensor_type": "cowrie", "start_immediately": False})
+        sched._dispatch_deploy(s2)
+        with sched._lock:
+            allS = sched._load_schedules(); allS[s2["id"]] = s2; sched._save_schedules(allS)
+        open_tid = s2["state"]["task_id"]
+        sched.delete_schedule(s2["id"], destroy_droplet=True)
+        assert get_task_status(open_tid)["status"] == "failed"
+        print("  ✓ Deleting a campaign mid-cycle fails its open deploy task (and runs a teardown task)")
+
+    # Startup: fail only campaign tasks no campaign claims
+    record_task("orphan-task", "campaign_deploy", "Campaign deploy", "x", "cowrie", status="running")
+    s3 = sched.create_schedule({"name": "Claims Task", "sensor_type": "cowrie", "start_immediately": False})
+    record_task("claimed-task", "campaign_deploy", "Campaign deploy", "y", "cowrie", status="running")
+    with sched._lock:
+        allS = sched._load_schedules(); allS[s3["id"]]["state"]["task_id"] = "claimed-task"; sched._save_schedules(allS)
+    assert sched.reap_orphaned_campaign_tasks() >= 1  # earlier tests in this process leave their own orphans
+    assert get_task_status("orphan-task")["status"] == "failed"
+    assert get_task_status("claimed-task")["status"] == "running"
+    print("  ✓ Startup fails orphaned campaign tasks but leaves ones a campaign still tracks")
+
+
 def test_pause_resume_keeps_active_sensor():
     print("\n=== Testing pause/resume on an active campaign keeps its sensor ===")
     from datetime import datetime, timedelta, timezone
@@ -851,6 +942,7 @@ if __name__ == "__main__":
     test_concurrent_trigger_does_not_double_dispatch()
     test_campaign_do_dispatch_is_bare_and_safe()
     test_campaign_gcp_dispatch_finalize_and_backstop_lease()
+    test_campaign_tasks_track_each_cycle()
     test_pause_resume_keeps_active_sensor()
     test_manual_deploy_cleans_up_hive_login_on_create_failure()
     test_playbook_env_template_and_port_choice()

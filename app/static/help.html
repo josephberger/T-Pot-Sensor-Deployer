@@ -139,6 +139,8 @@
                 <li><b>Fixed interval</b>: rebuild after each cooldown. <b>Random window</b>: rebuild after a random cooldown so the pattern can't be predicted. <b>Weekly</b>: the same day and time each week.</li>
                 <li><b>Rotate regions</b> moves to a different datacenter on each rebuild.</li>
                 <li>The worker checks campaigns every 10 seconds. It starts at most 3 rebuilds at once, and if a campaign fails 3 times in a row it is <b>suspended</b> to protect your account. Fix the cause, then resume it.</li>
+                <li>Each rebuild and each teardown shows up on <b>Tasks</b> with its full log, the same as a manual deploy. <b>Cycle log</b> on a campaign opens its latest one; the filter on Tasks shows only campaign or only manual tasks.</li>
+                <li><b>Pause</b> stops new rebuilds and teardowns. A rebuild already in progress still finishes, and a running sensor stays up until you resume.</li>
             </ul>
         </section>
 

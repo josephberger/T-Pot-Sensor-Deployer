@@ -238,6 +238,20 @@ def set_task_status(
     return get_task_status(task_id)
 
 
+def update_task_meta(task_id: str, **fields) -> None:
+    """Overwrite display fields on an existing task (e.g. sensor_name once a campaign cycle has
+    generated its droplet name). Never touches status; use set_task_status for that."""
+    updates = {k: str(v) for k, v in fields.items() if v is not None}
+    if not updates:
+        return
+    try:
+        redis_conn.hset(f"deploy:{task_id}:meta", mapping=updates)
+    except Exception as e:
+        logger.debug(f"Redis meta update fallback for {task_id}: {e}")
+        if task_id in _FALLBACK_META:
+            _FALLBACK_META[task_id].update(updates)
+
+
 def get_task_logs(task_id: str) -> List[dict]:
     """Retrieve all historical logs for a given task."""
     try:
@@ -293,11 +307,23 @@ def get_task_status(task_id: str) -> dict:
                 "updated_at": decoded.get("updated_at", ""),
                 "completed_at": decoded.get("completed_at", ""),
                 "deployed": deployed,
-                "error": decoded.get("error") or None
+                "error": decoded.get("error") or None,
+                # Set only on campaign tasks (see scheduler_manager._task_begin); empty for manual ones.
+                "campaign_id": decoded.get("campaign_id") or None,
+                "campaign_name": decoded.get("campaign_name") or None,
+                "cycle": decoded.get("cycle") or None,
             }
     except Exception:
         pass
-    return _FALLBACK_META.get(task_id, {"id": task_id, "status": "unknown", "deployed": [], "error": None})
+    meta = dict(_FALLBACK_META.get(task_id, {"id": task_id, "status": "unknown", "deployed": [], "error": None}))
+    # The fallback stores what the Redis hash would (JSON strings); return the same shapes as above.
+    if isinstance(meta.get("deployed"), str):
+        try:
+            meta["deployed"] = json.loads(meta["deployed"])
+        except Exception:
+            meta["deployed"] = []
+    meta["error"] = meta.get("error") or None
+    return meta
 
 
 def get_recent_tasks(limit: int = 25) -> List[dict]:
@@ -329,6 +355,11 @@ def reap_interrupted_tasks() -> int:
     """
     reaped = 0
     for t in get_recent_tasks(limit=100):
+        # Campaign tasks are not tied to this process's lifetime: a cycle waiting for its droplet's IP
+        # carries on after a restart, and one killed mid-Ansible is aborted (and its task failed) by the
+        # scheduler itself. SchedulerManager.reap_orphaned_campaign_tasks handles the ones nothing owns.
+        if str(t.get("task_type", "")).startswith("campaign_"):
+            continue
         if t.get("status") == "running":
             msg = "Interrupted: the worker was restarted while this task was running"
             publish_task_log(t["id"], f"❌ {msg}", level="error")

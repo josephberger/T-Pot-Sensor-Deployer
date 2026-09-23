@@ -5,6 +5,9 @@ _os.environ["DATA_DIR"] = _tempfile.mkdtemp(prefix="tpot-test-")
 # The T-Pot Hive is LIVE config (lswebpasswd + .env): tests must never resolve to the real one.
 _os.environ["TPOT_DIR"] = _tempfile.mkdtemp(prefix="tpot-test-hive-")
 _os.environ["SECRETS_DIR"] = _tempfile.mkdtemp(prefix="tpot-test-secrets-")
+# Tasks live in Redis and show on the live Tasks page: point at a closed port so the task layer uses
+# its in-memory fallback (these tests run inside the web container, where REDIS_URL is the real one).
+_os.environ["REDIS_URL"] = "redis://127.0.0.1:1/0"
 _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
 
 import unittest

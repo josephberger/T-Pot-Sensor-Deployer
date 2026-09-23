@@ -1647,6 +1647,11 @@ async function loadSchedules() {
                         Completed: <b class="text-slate-300">${state.cycle_number || 0} cycles</b>
                     </div>
                     <div class="flex items-center gap-1.5">
+                        ${state.last_task_id ? `
+                            <button onclick="reopenDeploymentStream(this.dataset.id, 'Campaign', this.dataset.name)" data-id="${escapeHtml(state.last_task_id)}" data-name="${escapeHtml(s.name)}" class="flex-1 sm:flex-none px-3 py-2 sm:py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-300 border border-slate-700 transition-colors text-center min-h-[36px] sm:min-h-0" data-tip="Open the log of this campaign's most recent deploy or teardown (also on the Tasks page).">
+                                <i class="fa-solid fa-terminal"></i> Cycle log
+                            </button>
+                        ` : ''}
                         <button onclick="triggerScheduleAction('${s.id}')" class="flex-1 sm:flex-none px-3 py-2 sm:py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-cyan-300 border border-slate-700 transition-colors text-center min-h-[36px] sm:min-h-0" title="${state.status === 'active' ? 'Force Teardown and Enter Cooldown' : 'Force Deploy Now'}">
                             ${state.status === 'active' ? '<i class="fa-solid fa-bolt"></i> Teardown Now' : '<i class="fa-solid fa-bolt"></i> Deploy Now'}
                         </button>
@@ -2114,6 +2119,28 @@ function renderDashboardTasks(tasks, workers, activeTasks, onlineCount) {
     dashTasks.innerHTML = tasksHtml;
 }
 
+// Tasks page source filter: a per-viewer convenience, so localStorage (guarded) is fine.
+let taskSourceFilter = (() => { try { return localStorage.getItem("taskSourceFilter") || "all"; } catch (e) { return "all"; } })();
+
+function setTaskSourceFilter(value) {
+    taskSourceFilter = value;
+    try { localStorage.setItem("taskSourceFilter", value); } catch (e) {}
+    loadWorkerStatus(false);
+}
+
+function isCampaignTask(t) {
+    return String(t.task_type || "").startsWith("campaign_");
+}
+
+// Second line under a task's target: the campaign and cycle for campaign tasks, else the sensor type.
+function taskSubtitle(t) {
+    if (isCampaignTask(t)) {
+        const cycle = t.cycle && t.cycle !== "0" ? ` · cycle #${escapeHtml(t.cycle)}` : "";
+        return `<i class="fa-solid fa-calendar-days text-[9px]"></i> ${escapeHtml(t.campaign_name || "campaign")}${cycle}`;
+    }
+    return escapeHtml(t.sensor_type || 'honeypot');
+}
+
 async function loadWorkerStatus(showSpinner = false) {
     try {
         const icon = document.getElementById("worker-refresh-icon");
@@ -2187,6 +2214,10 @@ async function loadWorkerStatus(showSpinner = false) {
         }
 
         // 3. Render Active & Recent Tasks
+        const filterSelect = document.getElementById("tasks-source-filter");
+        if (filterSelect && filterSelect.value !== taskSourceFilter) filterSelect.value = taskSourceFilter;
+        const shownTasks = taskSourceFilter === "campaign" ? tasks.filter(isCampaignTask)
+            : taskSourceFilter === "manual" ? tasks.filter(t => !isCampaignTask(t)) : tasks;
         const tasksTbody = document.getElementById("tasks-table-body");
         const tasksCards = document.getElementById("tasks-cards-list");
         const tasksEmpty = document.getElementById("tasks-empty-state");
@@ -2196,7 +2227,7 @@ async function loadWorkerStatus(showSpinner = false) {
             tasksCountLabel.innerText = `${tasks.length} task${tasks.length === 1 ? '' : 's'} recorded (${activeTasks.length} in flight)`;
         }
 
-        if (tasks.length === 0) {
+        if (shownTasks.length === 0) {
             if (tasksTbody) tasksTbody.innerHTML = "";
             if (tasksCards) tasksCards.innerHTML = "";
             if (tasksEmpty) tasksEmpty.classList.remove("hidden");
@@ -2205,7 +2236,7 @@ async function loadWorkerStatus(showSpinner = false) {
 
             // Render Desktop Tasks Table
             if (tasksTbody) {
-                tasksTbody.innerHTML = tasks.map(t => {
+                tasksTbody.innerHTML = shownTasks.map(t => {
                     let statusBadge = "";
                     if (t.status === "running") {
                         statusBadge = `
@@ -2255,7 +2286,7 @@ async function loadWorkerStatus(showSpinner = false) {
                             </td>
                             <td class="py-2.5 px-4 text-slate-200">
                                 <div class="font-medium text-xs text-white">${safeSensor}</div>
-                                <div class="text-[10px] text-slate-500 font-mono">${escapeHtml(t.sensor_type || 'honeypot')}</div>
+                                <div class="text-[10px] text-slate-500 font-mono">${taskSubtitle(t)}</div>
                             </td>
                             <td class="py-2.5 px-4">
                                 ${statusBadge}
@@ -2281,7 +2312,7 @@ async function loadWorkerStatus(showSpinner = false) {
 
             // Render Mobile Tasks Cards
             if (tasksCards) {
-                tasksCards.innerHTML = tasks.map(t => {
+                tasksCards.innerHTML = shownTasks.map(t => {
                     let statusBadge = "";
                     if (t.status === "running") {
                         statusBadge = `<span class="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold uppercase border bg-amber-500/20 text-amber-300 border-amber-500/30 flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span> Running (${t.percent || 0}%)</span>`;
@@ -2308,7 +2339,7 @@ async function loadWorkerStatus(showSpinner = false) {
                             <div class="flex items-center justify-between text-xs">
                                 <div>
                                     <div class="font-bold text-white">${safeSensor}</div>
-                                    <div class="text-[10px] text-slate-400 font-mono">ID: ${t.id.slice(0, 8)}...</div>
+                                    <div class="text-[10px] text-slate-400 font-mono">${isCampaignTask(t) ? taskSubtitle(t) : `ID: ${t.id.slice(0, 8)}...`}</div>
                                 </div>
                                 <span class="text-[10px] text-slate-500 font-mono">${timeStr}</span>
                             </div>
