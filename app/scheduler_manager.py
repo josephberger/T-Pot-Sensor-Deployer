@@ -343,8 +343,18 @@ class SchedulerManager:
                 return False
             s = schedules[schedule_id]
             s["enabled"] = False
-            s["state"]["status"] = "paused"
-            s["state"]["last_message"] = "Schedule paused by user."
+            # Pausing only disables the timers (reconcile_tick's Phase 2 skips disabled schedules); it
+            # must NOT overwrite status. It used to set status = "paused", which broke both ends:
+            # resume_schedule only recognizes a live sensor when status == "active", so pause + resume
+            # on an active campaign fell through to "deploy now" and orphaned the running droplet (its
+            # current_droplet_id overwritten by the next dispatch); and pausing mid-provisioning took the
+            # cycle out of Phase 1's reconcile, so its droplet was never configured or cleaned up (in
+            # waiting_ip it had no lease yet, so nothing would ever destroy it). An in-flight cycle now
+            # finishes normally - see the paused branch in _finalize_active.
+            if s["state"].get("status") in ("provisioning", "tearing_down"):
+                s["state"]["last_message"] = "Paused. The in-flight cycle finishes first; nothing new starts until resumed."
+            else:
+                s["state"]["last_message"] = "Schedule paused by user."
             # Pausing freezes the state machine that would otherwise destroy this droplet on schedule -
             # its own next_action_at timer never fires while disabled (reconcile_tick's Phase 2 skips
             # disabled schedules outright). Without this, the backstop lease from _finalize_active (just
@@ -352,7 +362,7 @@ class SchedulerManager:
             # mid-pause instead of protecting it. Extend it to a generous, but still finite, ceiling
             # instead - a brief pause never approaches it; a truly forgotten paused campaign still gets
             # cleaned up eventually rather than billing forever.
-            if s["state"].get("status") != "provisioning" and s["state"].get("current_droplet_id"):
+            if s["state"].get("status") == "active" and s["state"].get("current_droplet_id"):
                 self._schedule_backstop_lease(s, PAUSE_BACKSTOP_SECONDS)
             self._save_schedules(schedules)
 
@@ -1066,7 +1076,10 @@ class SchedulerManager:
 
         # Extend the backstop lease from its short provisioning-phase duration to cover the full active
         # window plus slack - see PROVISIONING_BACKSTOP_MINUTES/CAMPAIGN_BACKSTOP_BUFFER_SECONDS.
-        self._schedule_backstop_lease(schedule, active_sec + CAMPAIGN_BACKSTOP_BUFFER_SECONDS)
+        # A campaign paused mid-cycle still finishes that cycle, but its destroy timer won't run until it's
+        # resumed - give it the same pause-length ceiling pause_schedule gives an already-active sensor.
+        paused = not schedule.get("enabled", True)
+        self._schedule_backstop_lease(schedule, PAUSE_BACKSTOP_SECONDS if paused else active_sec + CAMPAIGN_BACKSTOP_BUFFER_SECONDS)
 
         state["status"] = "active"
         state.pop("stage", None)
@@ -1083,6 +1096,8 @@ class SchedulerManager:
             f"Cycle #{state['cycle_number']} active! Dynamic IP: {pub_ip} "
             f"(Destroy at {next_destroy_at.strftime('%Y-%m-%d %H:%M:%S UTC')})"
         )
+        if paused:
+            state["last_message"] += " Campaign is paused: the teardown timer runs once it's resumed."
 
     def _async_do_configure_worker(self, schedule_id: str, ctx: dict):
         """Background thread: configure a freshly created droplet over SSH with Ansible, verify health,

@@ -787,6 +787,57 @@ def test_trimmed_logstash_pipeline():
     print("  ✓ Compose mounts the trimmed pipeline over the stock one and sets the heap from a variable")
 
 
+def test_pause_resume_keeps_active_sensor():
+    print("\n=== Testing pause/resume on an active campaign keeps its sensor ===")
+    from datetime import datetime, timedelta, timezone
+    from app.scheduler_manager import SchedulerManager, PAUSE_BACKSTOP_SECONDS
+    from app.db import db_save_active_droplet, db_get_lease
+    from app.models import Sensor
+
+    sched = SchedulerManager()
+    s = sched.create_schedule({"name": "Pause Test", "sensor_type": "cowrie", "start_immediately": False})
+    sid = s["id"]
+    now = datetime.now(timezone.utc)
+    destroy_at = (now + timedelta(hours=4)).isoformat()
+    with sched._lock:
+        allS = sched._load_schedules()
+        allS[sid]["state"].update(status="active", current_droplet_id=616161, current_public_ip="203.0.113.9",
+                                  current_droplet_name="pause-sensor", cycle_started_at=now.isoformat(),
+                                  next_action="destroy", next_action_at=destroy_at)
+        sched._save_schedules(allS)
+    db_save_active_droplet(Sensor(id=616161, name="pause-sensor", public_ip="203.0.113.9", sensor_type="cowrie",
+                                  status="active", created_at=now.isoformat()), db_path=sched.db_path)
+
+    sched.pause_schedule(sid)
+    st = sched._load_schedules()[sid]
+    assert st["enabled"] is False and st["state"]["status"] == "active", "pause must not overwrite status"
+    lease = db_get_lease(616161, db_path=sched.db_path)
+    assert lease and lease["ttl_seconds"] == PAUSE_BACKSTOP_SECONDS
+    print("  ✓ Pause disables timers, keeps status 'active', extends the backstop lease")
+
+    sched.resume_schedule(sid)
+    st = sched._load_schedules()[sid]["state"]
+    # Used to fall through to cooling_down + "deploy now", orphaning droplet 616161.
+    assert st["status"] == "active" and st["next_action"] == "destroy" and st["next_action_at"] == destroy_at
+    assert st["current_droplet_id"] == 616161
+    print("  ✓ Resume keeps the running sensor and its original teardown time (no second deploy)")
+
+    # Paused mid-provisioning: the cycle finishes, with the pause-length lease
+    with sched._lock:
+        allS = sched._load_schedules()
+        allS[sid]["state"].update(status="provisioning", stage="configuring")
+        sched._save_schedules(allS)
+    sched.pause_schedule(sid)
+    s = sched._load_schedules()[sid]
+    assert s["state"]["status"] == "provisioning", "an in-flight cycle must stay reconcilable"
+    from unittest.mock import patch
+    with patch("app.edl_manager.EDLManager.write_edl_file", return_value=None):
+        sched._finalize_active(s, None)
+    assert s["state"]["status"] == "active" and "paused" in s["state"]["last_message"]
+    assert db_get_lease(616161, db_path=sched.db_path)["ttl_seconds"] == PAUSE_BACKSTOP_SECONDS
+    print("  ✓ Pausing mid-provisioning lets the cycle finish, with the pause-length backstop lease")
+
+
 if __name__ == "__main__":
     test_sensor_registry()
     test_compose_generation()
@@ -800,6 +851,7 @@ if __name__ == "__main__":
     test_concurrent_trigger_does_not_double_dispatch()
     test_campaign_do_dispatch_is_bare_and_safe()
     test_campaign_gcp_dispatch_finalize_and_backstop_lease()
+    test_pause_resume_keeps_active_sensor()
     test_manual_deploy_cleans_up_hive_login_on_create_failure()
     test_playbook_env_template_and_port_choice()
     test_trimmed_logstash_pipeline()
