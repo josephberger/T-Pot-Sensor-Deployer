@@ -12,9 +12,10 @@
             <span id="admin-do-badge" class="px-2 py-0.5 text-[11px] font-mono rounded-full bg-slate-800 text-slate-400 border border-slate-700">checking...</span>
         </div>
         <div class="p-4 sm:p-6 space-y-4 text-xs text-slate-300">
-            
+            <p class="text-slate-500">Auth is an API token (read + write) in <code>secrets/do_token</code> on the deployer host (read-only mount); it can't be set from the UI. Run <code>./tpot-expansion-pack.sh --setup</code> to set or replace it, or write the file yourself with mode 600. Changes apply without a restart.</p>
+            <div class="font-mono text-slate-500">Token file: <span id="admin-do-token">-</span></div>
             <div class="flex flex-wrap items-center gap-2">
-                <button onclick="adminVerifyToken()" class="px-3 py-1.5 font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700" data-tip="Checks the saved API token with DigitalOcean.">Verify token</button>
+                <button onclick="adminVerifyToken()" class="px-3 py-1.5 font-semibold rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700" data-tip="Checks the token in secrets/do_token with DigitalOcean.">Verify token</button>
                 <button id="admin-sync-btn" onclick="adminSync()" class="px-3 py-1.5 font-semibold rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white"data-tip="The regions, sizes and images on the Deploy page come from a local copy. This refreshes it from DigitalOcean.">Sync options</button>
                 <span id="admin-do-msg" class="font-mono text-slate-400"></span>
             </div>
@@ -92,7 +93,8 @@ async function adminLoad() {
 
     const badge = document.getElementById("admin-do-badge");
     const tokenSet = status.config && status.config.do_token_set;
-    badge.innerText = !tokenSet ? "no token" : (status.digitalocean.verified ? "token verified" : "token saved, not verified");
+    badge.innerText = !tokenSet ? "no token" : (status.digitalocean.verified ? "token verified" : "token found, not verified");
+    document.getElementById("admin-do-token").innerHTML = tokenSet ? '<span class="text-emerald-400">found</span>' : '<span class="text-rose-400">missing: put your token in secrets/do_token next to docker-compose.yml</span>';
     badge.className = "px-2 py-0.5 text-[11px] font-mono rounded-full border " + (tokenSet && status.digitalocean.verified ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" : "bg-amber-500/20 text-amber-300 border-amber-500/30");
 
     document.getElementById("cnt-regions").innerText = (options.regions || []).length;

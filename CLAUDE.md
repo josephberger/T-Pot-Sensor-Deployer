@@ -12,10 +12,10 @@ T-Pot Sensor Deployer: a FastAPI web console plus an RQ worker that creates hone
 
 ## Running it
 
-Docker Compose is the only supported way (`web`, `worker`, `redis`). There is no bundled proxy: T-Pot's nginx routes `/sensors/` and `/edl/` to the web container (`nginx/tpot-location.conf`).
+Docker Compose is the only supported way (`web`, `worker`, `redis`). There is no bundled proxy: T-Pot's nginx routes `/sensors/` and `/edl/` to the web container (`nginx/tpot-location.conf`), wired up by `tpot-expansion-pack.sh`. T-Pot's nginx is on its own Docker network, so it reaches `web` via the Docker bridge IP (`WEB_BIND`), never `127.0.0.1`; its image is read-only, so the script mounts generated `tpotweb.conf`/`index.html` from `$TPOT_DATA_PATH/nginx/conf/` rather than editing the container.
 
 ```bash
-cp .env.example .env            # TPOT_HOST_DIR at minimum; secrets/ssh_key + ssh_key.pub
+./tpot-expansion-pack.sh        # first run creates .env + secrets/ (prompts), wires T-Pot nginx, starts the stack
 docker compose up -d --build    # code is baked into the image; rebuild after edits
 docker compose logs -f web worker
 ```
@@ -29,7 +29,7 @@ docker compose logs -f web worker
 
 - `app/api.py`: routes and page routes. Templates in `app/templates/` extend `base.html`; one shared `app/static/js/app.js`.
 - `app/models.py`: `Settings`, `Sensor`/`SensorStatus` (`provisioning`, `active`, `provision_failed`), API payloads.
-- `app/config.py`: paths and settings. Settings go to the browser through `public_settings()` (masks `do_token`); never return raw settings.
+- `app/config.py`: paths and settings. Settings go to the browser through `public_settings()` (masks `do_token`); never return raw settings. The DO token comes **only** from `secrets/do_token` (`get_do_token()`, read per call): not `.env`/env vars (visible in `docker inspect`), not the DB, not settable from the UI or API. Don't add another source.
 - `app/db.py`: SQLite (WAL). Tables: `active_droplets`, `leases`, `schedules`, `static_ips`, `fleet_history`, `settings`, cloud option caches. Fleet reads never call the cloud API.
 - `app/jobs.py`, `app/queue_manager.py`, `worker.py`: RQ jobs on Redis; `worker.py`'s `SchedulerThread` is the **only** place the campaign tick (10 s) and TTL sweep (60 s) run - `app/api.py`'s startup used to fall back to running its own copy of both loops whenever no RQ worker was registered *yet*, but `web` and `worker` start concurrently with no ordering between them, so `web` routinely won that race and ran a second, permanent copy of both loops with no real cross-process lock (every dispatch/teardown/TTL destroy could fire twice). Removed; the worker container is required, not an optional target to fall back from.
 - `app/ansible_runner.py` (run a playbook: key copied to a 0600 temp file, secrets via a 0600 vars file), `app/provisioning.py` (`configure_and_verify`: pick SSH port, run the sensor playbook, health check with retries, wait for firewall admission), `app/health.py` (`quick_check`, `deep_check`). Both take `remote_ssh_user` (default `root`, DO): a GCP image doesn't allow root SSH, so the GCP deploy path passes `tpotadmin` instead - every playbook already runs with `become: true`, so this is the only change needed, not a per-cloud playbook branch. `ansible_runner.wait_for_ssh_auth` covers GCP's guest agent needing a few seconds after boot to actually install that user's key (a no-op wait for DO, where auth already works the instant the port opens).
@@ -95,5 +95,5 @@ A pass of adversarial testing - too-long and special-character input, concurrent
 - **A `_finalize_active` failure after a successful configure crashed the background thread** instead of aborting the cycle cleanly - it would still self-heal a tick later via the "interrupted configuration" path (built for a worker restart), but only after an unhandled traceback and a wasted extra tick. Now wrapped: any exception there is treated the same as a configure failure.
 - Also bounded: `name`/`description`/static-IP `comment` fields with no `max_length`, which cost nothing to fix and closes a class of "wall of garbage in a log line or DB row" issues even though none of them crashed anything on their own.
 - **Confirmed safe, not changed:** SQL-metacharacter, null-byte, and unicode/emoji names all round-tripped through the DB and task list without incident (every query in `app/db.py` is parameterized); an unknown `timing.mode` degrades to plain-interval behavior instead of crashing; `cooldown_min > cooldown_max` self-corrects in `_calculate_next_rebuild` instead of crashing `random.randint`; IPv6 static EDL entries are accepted (`is_valid_ip_or_cidr` isn't actually IPv4-only despite its error message saying so - harmless, just a stale message).
-- The EDL feed is unauthenticated by design (the firewall polls it); its redesign is deferred.
+- The EDL feed has no login by design (the firewall polls it), but nginx admits only the addresses in `EDL_ALLOW` (see `nginx/tpot-location.conf`, applied by `tpot-expansion-pack.sh`).
 - `doconsole-reference/` is a gitignored reference copy of an older project. Leave it alone.

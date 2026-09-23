@@ -80,6 +80,7 @@
         <section>
             <h2 id="start" class="text-lg font-bold text-white mb-3">Getting started</h2>
             <ol class="list-decimal list-inside space-y-1.5">
+                <li>Put your DigitalOcean API token in <code>secrets/do_token</code> on the deployer host: <code>./tpot-expansion-pack.sh</code> asks for it. It can't be set from this UI.</li>
                 <li>Open <b>Admin</b>. Click <b>Verify token</b>, then <b>Sync options</b> so the Deploy page has current regions and sizes.</li>
                 <li>Open <b>Deploy</b>, pick a sensor type, choose an auto-destroy time (use 1 or 2 hours while testing), and click <b>Launch sensor</b>.</li>
                 <li>Watch the progress dialog, or close it and follow the run on <b>Tasks</b>. A deploy takes about 5 minutes.</li>
@@ -178,6 +179,7 @@
                 <table>
                     <thead><tr><th>What you see</th><th>What to do</th></tr></thead>
                     <tbody>
+                        <tr><td>"No DigitalOcean API token" banner</td><td><code>secrets/do_token</code> is missing or empty on the deployer host. Run <code>./tpot-expansion-pack.sh --setup</code> there, or write the token to that file. No restart needed.</td></tr>
                         <tr><td>Deploy fails straight away</td><td>Open the task on <b>Tasks</b> and read the last lines. The most common cause is a missing SSH key file or an unsupported sensor type.</td></tr>
                         <tr><td>Setup fails with a timeout on port 64295</td><td>The deployer can't reach the sensor's admin port. The cloud firewall allows it only from the Hive's IP, so the deployer's outgoing IP must match the Hive's address.</td></tr>
                         <tr><td>Sensor is active but no logs reach the Hive</td><td>Check, in order: is the log shipper running on the sensor; can the sensor reach the Hive on 64294; is the firewall admitting it (see above); does its login exist (Admin).</td></tr>

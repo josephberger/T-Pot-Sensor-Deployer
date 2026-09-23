@@ -25,7 +25,7 @@ class Settings(BaseModel):
     ssh_key_path: str = ""  # empty = default location (secrets/ssh_key.pub)
     hive_ip: str = ""
     hive_port: int = 64294
-    do_token: str = ""
+    # No DO token here: it's read from secrets/do_token (config.get_do_token), never stored.
     # GCP: no token to store (auth is the service account file at secrets/gcp-sa.json, picked up via
     # GOOGLE_APPLICATION_CREDENTIALS), just a project id and deploy-page defaults for zone/machine/image.
     gcp_project_id: str = ""
@@ -64,7 +64,6 @@ class Sensor(BaseModel):
 # API request payloads
 # ---------------------------------------------------------
 class SettingsPayload(BaseModel):
-    do_token: Optional[str] = None
     region: Optional[str] = None
     size: Optional[str] = None
     image: Optional[str] = None
@@ -101,7 +100,6 @@ class DeployPayload(BaseModel):
     hive_ip: Optional[str] = None
     hive_port: int = 64294
     hive_cert: Optional[str] = None
-    token_override: Optional[str] = None
 
 
 class ActionPayload(BaseModel):

@@ -2,7 +2,7 @@
 // rendered text/tooltips/dropdowns, and "[object Object]/undefined/NaN" leaking into the page.
 //
 //   docker run --rm --network host -v "$PWD/tests":/w -w /w node:20-alpine sh -c \
-//     'npm i --silent jsdom@22 >/dev/null 2>&1; node ui_audit.js http://127.0.0.1:8880'
+//     'npm i --silent jsdom@22 >/dev/null 2>&1; node ui_audit.js http://172.17.0.1:8880'
 //
 // Run it against a running deployer (read-only: it only loads pages). The single-color shield and rocket
 // emoji are allowed; everything else should be a Font Awesome icon (see sensorIcon()/plain() in app.js).

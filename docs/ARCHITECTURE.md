@@ -48,12 +48,12 @@ The containers run as `PUID:PGID` (plus the `tpot` group) so the Hive's files st
 | Port | Where | Purpose |
 | :--- | :--- | :--- |
 | 64297 | Hive | T-Pot nginx: T-Pot UI, the deployer at `/sensors/` (basic auth), the EDL at `/edl/` (no auth) |
-| 8880 | Deployer host, loopback | The `web` container; T-Pot's nginx proxies to it |
+| 8880 | Deployer host, Docker bridge IP (`172.17.0.1`) | The `web` container; T-Pot's nginx proxies to it |
 | 64294 | Hive | Sensor log ingestion (TLS plus per-sensor basic auth) |
 | 64295 | Sensors | Admin SSH; the DigitalOcean firewall restricts it to the Hive's IP |
 | honeypot ports | Sensors | Open to the internet per sensor type |
 
-The deployer ships no proxy of its own. T-Pot's nginx routes `/sensors/` to `127.0.0.1:8880` and passes `/edl/` through unauthenticated so a firewall can poll it (see `nginx/tpot-location.conf`). The frontend adapts to the `/sensors/` prefix at runtime (`getAppPath` in the templates, `apiUrl` in `app.js`).
+The deployer ships no proxy of its own. T-Pot's nginx routes `/sensors/` to the web container and passes `/edl/` through without a login to the addresses in `EDL_ALLOW`, so a firewall can poll it (see `nginx/tpot-location.conf`). T-Pot's nginx is on its own Docker network, so it reaches the web container through the host's Docker bridge IP, which is where `WEB_BIND` publishes it. Its config and landing page are baked into its read-only image, so `tpot-expansion-pack.sh` generates both from the image's stock copies, writes them to `$TPOT_DATA_PATH/nginx/conf/`, and bind-mounts them into T-Pot's nginx service. The frontend adapts to the `/sensors/` prefix at runtime (`getAppPath` in the templates, `apiUrl` in `app.js`).
 
 ## 3. Deploy pipeline (manual: DigitalOcean and GCP)
 
@@ -138,9 +138,9 @@ Fleet listings (`/api/droplets`) read SQLite only and never call a cloud API, fo
 
 ## 6.1 Security notes
 
-- Settings sent to the browser go through `config.public_settings()`, which replaces the DO token with a `do_token_set` flag. GCP has no equivalent secret in Settings - auth is a service account key file (`secrets/gcp-sa.json`), never sent to the browser at all.
+- Cloud credentials are files in the read-only `/secrets` mount, never settings, env vars or database rows: the DO token is `secrets/do_token` (`config.get_do_token()` reads it on every call) and GCP auth is `secrets/gcp-sa.json`. Neither can be set from the UI or sent to the browser; `config.public_settings()` exposes only a `do_token_set` flag and the file path. A token stored in the database by older versions is deleted at web startup (`purge_stored_do_token`).
 - Each sensor has its own Hive login. The password is held only long enough to configure the sensor and is stripped from API output.
-- The `/edl/` feed is unauthenticated by design (so a firewall can poll it). It lists sensor IPs only.
+- The `/edl/` feed has no login by design (so a firewall can poll it), but T-Pot's nginx serves it only to the addresses in `EDL_ALLOW`. It lists sensor IPs only.
 - The deployer's private key is mounted read-only from `secrets/` and copied to a 0600 temp file per run.
 - Tests point at temporary data and Hive directories so they can never modify the real Hive.
 

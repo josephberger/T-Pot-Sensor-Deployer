@@ -29,9 +29,12 @@ LOGS_DIR.mkdir(parents=True, exist_ok=True)
 # T-Pot Hive directory (mounted at /tpot in Docker; see TPOT_HOST_DIR in docker-compose.yml)
 TPOT_DIR = Path(os.environ.get("TPOT_DIR") or (HOME_DIR / "tpotce"))
 
-# Read-only secrets directory (mounted at /secrets in Docker): gcp-sa.json, ssh_key.pub
+# Read-only secrets directory (mounted at /secrets in Docker): do_token, gcp-sa.json, ssh_key(.pub)
 SECRETS_DIR = Path(os.environ.get("SECRETS_DIR", "/secrets"))
 DEFAULT_SSH_PUBKEY_PATH = SECRETS_DIR / "ssh_key.pub"
+# The DigitalOcean token lives only here: not in .env (env vars show up in `docker inspect`) and not
+# in the database (it can't be set from the UI). Read on every call, so replacing it needs no restart.
+DO_TOKEN_PATH = SECRETS_DIR / "do_token"
 
 
 def load_config() -> dict:
@@ -40,10 +43,7 @@ def load_config() -> dict:
 
     cfg = Settings().model_dump()
     cfg.update({k: v for k, v in db_get_settings().items() if k in cfg})
-
-    env_token = os.environ.get("DO_TOKEN") or os.environ.get("DIGITALOCEAN_TOKEN") or os.environ.get("DOCONSOLE_TOKEN")
-    if env_token:
-        cfg["do_token"] = env_token
+    cfg["do_token"] = get_do_token()
 
     env_hive_ip = os.environ.get("TPOT_HIVE_IP") or os.environ.get("HIVE_IP")
     if env_hive_ip:
@@ -72,6 +72,7 @@ def public_settings(cfg: dict) -> dict:
     """Settings safe to send to the browser: secrets are replaced by a *_set flag."""
     out = {k: v for k, v in cfg.items() if k != "do_token"}
     out["do_token_set"] = bool(cfg.get("do_token"))
+    out["do_token_path"] = str(DO_TOKEN_PATH)
     return out
 
 
@@ -87,9 +88,17 @@ def ssh_fingerprint(pubkey: str) -> str:
 
 
 def get_do_token() -> str:
-    """Retrieve DigitalOcean API Token from env or config."""
-    cfg = load_config()
-    return cfg.get("do_token", "") or os.environ.get("DO_TOKEN", "") or os.environ.get("DIGITALOCEAN_TOKEN", "")
+    """DigitalOcean API token from secrets/do_token ('' if the file is missing or empty)."""
+    try:
+        return DO_TOKEN_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def purge_stored_do_token():
+    """Delete a DO token saved to the database by older versions (it was settable from the UI)."""
+    from app.db import db_delete_setting
+    db_delete_setting("do_token")
 
 
 def get_local_ssh_pubkey() -> tuple:

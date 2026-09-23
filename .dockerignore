@@ -4,6 +4,7 @@ __pycache__/
 .git/
 .gitignore
 .env
+.env.bak-*
 .tpot-sensor-deployer/
 data/
 doconsole-reference/

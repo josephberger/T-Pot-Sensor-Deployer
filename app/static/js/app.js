@@ -180,15 +180,15 @@ async function fetchStatus() {
             if (doBadge) {
                 doBadge.className = "px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-full bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 flex items-center gap-1 sm:gap-1.5 cursor-pointer shrink-0";
                 doBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-cyan-400 shrink-0"></span><span class="hidden sm:inline">DO Configured (Click to Verify)</span><span class="sm:hidden font-mono">DO Ready</span>`;
-                doBadge.onclick = () => openModal("settings-modal");
+                doBadge.onclick = () => navigateTo("/admin");
             }
             if (tokenMissingBanner) tokenMissingBanner.classList.add("hidden");
             if (btnDeployMain) btnDeployMain.disabled = false;
         } else {
             if (doBadge) {
                 doBadge.className = "px-2 sm:px-2.5 py-1 text-[11px] sm:text-xs font-semibold rounded-full bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center gap-1 sm:gap-1.5 cursor-pointer shrink-0";
-                doBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400 shrink-0"></span><span class="hidden sm:inline">Missing DO Token (Click to Set)</span><span class="sm:hidden font-mono">No DO!</span>`;
-                doBadge.onclick = () => openModal("settings-modal");
+                doBadge.innerHTML = `<span class="w-2 h-2 rounded-full bg-rose-400 shrink-0"></span><span class="hidden sm:inline">Missing DO Token (See Admin)</span><span class="sm:hidden font-mono">No DO!</span>`;
+                doBadge.onclick = () => navigateTo("/admin");
             }
             if (tokenMissingBanner) tokenMissingBanner.classList.remove("hidden");
             if (btnDeployMain) btnDeployMain.disabled = true;
@@ -1115,11 +1115,9 @@ async function promptSetTTL(id) {
 async function saveSettings(event) {
     if (event) event.preventDefault();
 
-    const token = document.getElementById("settings-token").value.trim();
     const hiveIp = document.getElementById("settings-hive-ip").value.trim();
 
     const payload = {};
-    if (token) payload.do_token = token;
     if (hiveIp) payload.hive_ip = hiveIp;
 
     try {
@@ -1137,31 +1135,6 @@ async function saveSettings(event) {
         await loadDroplets();
     } catch (err) {
         showNotification(err.message, "error");
-    }
-}
-
-async function testToken() {
-    const token = document.getElementById("settings-token").value.trim();
-    const resultBox = document.getElementById("token-test-result");
-    resultBox.classList.remove("hidden");
-    resultBox.className = "mt-2 p-2.5 rounded text-xs bg-slate-800 text-slate-300";
-    resultBox.innerText = "Verifying token with DigitalOcean...";
-
-    try {
-        const res = await fetch(apiUrl("/api/test/token"), {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ token })
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.detail || "Verification failed");
-
-        resultBox.className = "mt-2 p-2.5 rounded text-xs bg-emerald-950/50 text-emerald-300 border border-emerald-800/60";
-        resultBox.innerHTML = `<i class="fa-solid fa-check"></i> Token valid. Account: <b>${data.account.email}</b> (Droplet Limit: ${data.account.droplet_limit})`;
-        await fetchStatus();
-    } catch (err) {
-        resultBox.className = "mt-2 p-2.5 rounded text-xs bg-rose-950/50 text-rose-300 border border-rose-800/60";
-        resultBox.innerHTML = `<i class="fa-solid fa-xmark"></i> ${err.message}`;
     }
 }
 

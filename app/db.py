@@ -823,6 +823,12 @@ def db_get_settings(db_path: Optional[Path] = None) -> Dict[str, Any]:
         return {r["key"]: json.loads(r["value_json"]) for r in conn.execute("SELECT key, value_json FROM settings")}
 
 
+def db_delete_setting(key: str, db_path: Optional[Path] = None):
+    init_db(db_path)
+    with get_db(db_path) as conn:
+        conn.execute("DELETE FROM settings WHERE key = ?", (key,))
+
+
 def db_save_settings(values: Dict[str, Any], db_path: Optional[Path] = None):
     init_db(db_path)
     with get_db(db_path) as conn:

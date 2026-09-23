@@ -41,7 +41,13 @@ Whenever sensors are deployed, rescheduled, or destroyed across DigitalOcean or 
 
 | Endpoint | Protocol | Port | Authentication | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `https://<HIVE_IP>:64297/edl/sensors.txt` | HTTPS | `64297` | **None** (`auth_basic off`) | Primary production feed (TLS encrypted) |
+| `https://<HIVE_IP>:64297/edl/sensors.txt` | HTTPS | `64297` | **No login, but only from the addresses in `EDL_ALLOW`** | Primary production feed (TLS encrypted) |
+
+### Who can fetch it
+
+The feed has no login, since a firewall can't type a password, but it isn't open to everyone either. It lists every sensor's IP. Set `EDL_ALLOW` in the deployer's `.env` to the address your firewall polls from (comma-separated for several; CIDRs work too) and run `./tpot-expansion-pack.sh`, which writes one nginx `allow` line per entry. Everyone else is refused, because T-Pot's nginx server block ends in `deny all`. If you run the script without `EDL_ALLOW`, it suggests any address it has seen polling `/edl/` with an empty user agent.
+
+The address to allow is the one T-Pot's nginx sees (`src_ip` in its access log, see [below](#checking-that-the-firewall-is-polling)): if the firewall NATs its own outbound traffic, that's the NAT address, not its interface IP.
 
 ### Which sensors are listed, and when
 
@@ -137,7 +143,9 @@ T-Pot's nginx logs each fetch. The firewall's requests are for `/edl/sensors.txt
 grep '"request_uri": "/edl/sensors.txt"' "$TPOT_HOST_DIR/data/nginx/log/access.log" | tail -5
 ```
 
-You should see one fetch about every 5 to 7 minutes (the refresh interval plus fetch time). If a new sensor cannot reach the Hive, compare its deploy time with the last fetch that came after the sensor was created.
+You should see one fetch about every 5 to 7 minutes (the refresh interval plus fetch time), each with `"status": "200"`. If a new sensor cannot reach the Hive, compare its deploy time with the last fetch that came after the sensor was created.
+
+**Fetches that get `401`** (nginx logs `access forbidden by rule` in `error.log`) come from an address that isn't in `EDL_ALLOW`. T-Pot shows its error page for refused requests, so a refused fetch logs as `401` rather than `403`. Add that `src_ip` to `EDL_ALLOW` and re-run `./tpot-expansion-pack.sh`. The firewall keeps its last good copy of the list while fetches fail, so sensors created since then aren't admitted.
 
 ---
 

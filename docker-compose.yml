@@ -4,7 +4,7 @@
 # live in the image / named volumes. The only host paths mounted are inputs:
 #   TPOT_HOST_DIR  the T-Pot Hive install the deployer registers sensors into (read/write)
 #   SECRETS_HOST_DIR  optional read-only dir holding gcp-sa.json and ssh_key.pub
-# Access is through T-Pot's own nginx (see nginx/tpot-location.conf) or directly on WEB_BIND:WEB_PORT.
+# Access is through T-Pot's own nginx (set up by tpot-expansion-pack.sh) or directly on WEB_BIND:WEB_PORT.
 
 x-deployer: &deployer
   build:
@@ -49,8 +49,15 @@ services:
     <<: *deployer
     container_name: tpot-deployer-web
     ports:
-      # Loopback only: T-Pot's host-network nginx proxies /sensors/ to this port.
-      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8880}:8880"
+      # Docker bridge IP (docker0): T-Pot's nginx runs on its own Docker network and proxies
+      # /sensors/ here; 127.0.0.1 would be the nginx container itself. Not reachable off-host.
+      - "${WEB_BIND:-172.17.0.1}:${WEB_PORT:-8880}:8880"
+      # Standalone (no T-Pot nginx in front): swap the line above for this one to publish the web
+      # app on every host IP at http://<host>:WEB_PORT/. The app has NO login of its own - T-Pot's
+      # nginx is what asks for a password - so anyone who can reach this port can create and
+      # destroy cloud machines on your account. Only use it behind a firewall that limits the
+      # port to you, and don't run tpot-expansion-pack.sh (it resets WEB_BIND to the bridge IP).
+      # - "0.0.0.0:${WEB_PORT:-8880}:8880"
 
   worker:
     <<: *deployer

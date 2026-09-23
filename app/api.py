@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.config import (
-    load_config, save_config, get_do_token, get_local_ssh_pubkey, public_settings, ssh_fingerprint,
+    load_config, save_config, get_do_token, get_local_ssh_pubkey, public_settings, ssh_fingerprint, purge_stored_do_token,
     get_gcp_project_id, gcp_credentials_available, gcp_sa_key_path, APP_DIR, PROJECT_ROOT
 )
 from app.do_client import DOClient, DOAPIError
@@ -97,6 +97,10 @@ async def lifespan(app: FastAPI):
     # run twice from two processes sharing no real lock (each process's threading.RLock only protects
     # itself). See CLAUDE.md; worker is a required Compose service, not an optional fallback target.
     try:
+        purge_stored_do_token()
+    except Exception:
+        pass
+    try:
         edl_mgr.write_edl_file(do_client=get_do_client())
     except Exception:
         pass
@@ -104,6 +108,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="T-Pot Sensor Deployer", lifespan=lifespan)
+
+DO_TOKEN_MISSING = ("No DigitalOcean API token: put it in secrets/do_token on the deployer host "
+                    "(or run ./tpot-expansion-pack.sh --setup). No restart needed.")
 
 # Mount static files and templates
 templates = Jinja2Templates(directory=str(APP_DIR / "templates"))
@@ -265,10 +272,11 @@ def update_settings(payload: SettingsPayload):
 
 
 @app.post("/api/test/token")
-def test_token(payload: Dict[str, str]):
-    token = payload.get("token", "").strip() or get_do_token()
+def test_token():
+    """Check the token in secrets/do_token with DigitalOcean (the only place a token comes from)."""
+    token = get_do_token()
     if not token:
-        raise HTTPException(status_code=400, detail="Token cannot be empty")
+        raise HTTPException(status_code=400, detail=DO_TOKEN_MISSING)
     client = DOClient(token=token)
     try:
         acc = client.test_connection()
@@ -426,7 +434,7 @@ def sync_droplets_from_cloud():
     """Manual sync: queries DigitalOcean API and reconciles local active_droplets table."""
     client = get_do_client()
     if not client.is_configured():
-        raise HTTPException(status_code=400, detail="DigitalOcean API token is not configured.")
+        raise HTTPException(status_code=400, detail=DO_TOKEN_MISSING)
     try:
         cloud_droplets = client.list_droplets(force_refresh=True)
         res = db_sync_active_droplets(cloud_droplets)
@@ -449,7 +457,7 @@ def sync_cloud_metadata():
     """Manual sync: pulls regions, sizes, images, ssh keys, and tags from DigitalOcean into SQLite."""
     client = get_do_client()
     if not client.is_configured():
-        raise HTTPException(status_code=400, detail="DigitalOcean API token is not configured.")
+        raise HTTPException(status_code=400, detail=DO_TOKEN_MISSING)
     try:
         regions = client.list_regions()
         sizes = client.list_sizes()
@@ -657,7 +665,7 @@ def setup_firewall():
     cfg = load_config()
     client = get_do_client()
     if not client.is_configured():
-        raise HTTPException(status_code=400, detail="DigitalOcean API token is not configured.")
+        raise HTTPException(status_code=400, detail=DO_TOKEN_MISSING)
 
     hive_ip = cfg.get("hive_ip") or hive_mgr.detect_hive_ip() or ""
     try:

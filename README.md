@@ -63,19 +63,87 @@ Every tracked sensor's IP is published as a plaintext [External Dynamic List](do
 
 ## Quick start
 
+On the Hive, with T-Pot installed and running:
+
 ```bash
-cp .env.example .env              # set TPOT_HOST_DIR (path to your tpotce), PUID/PGID, DO_TOKEN
-mkdir -p secrets
-cp ~/.ssh/id_rsa     secrets/ssh_key      # private key Ansible logs in with
-cp ~/.ssh/id_rsa.pub secrets/ssh_key.pub  # matching public key, uploaded to DigitalOcean
-docker compose up -d --build
+./tpot-expansion-pack.sh
 ```
 
-Then add the location blocks from [`nginx/tpot-location.conf`](nginx/tpot-location.conf) to T-Pot's nginx and reload it. The console is at `https://<hive>:64297/sensors/` (T-Pot's own login), or directly at `http://127.0.0.1:8880/`.
+On a first run it sets up everything the deployer needs, then hooks it into T-Pot's nginx (see [Behind T-Pot's nginx](#behind-t-pots-nginx-default)):
+
+- **`.env`**: created from `.env.example`. It fills in what it can work out: `PUID`/`PGID` from the owner of your T-Pot directory, `TPOT_GID` from T-Pot's nginx config folder, `WEB_BIND` (the Docker bridge IP) and the defaults. It prompts for:
+  - the path to your T-Pot install (defaults to `~/tpotce`);
+  - `EDL_ALLOW`, your firewall's address. It suggests any address it has already seen polling `/edl/` with an empty user agent, the way a Palo Alto does;
+- **`secrets/do_token`**: your DigitalOcean API token, hidden while you type and checked against the DigitalOcean API. Enter skips it if you only use GCP. If an older `.env` still has `DO_TOKEN`, the script moves it into this file and removes it from `.env`. The token can't be set from the web UI.
+- **`secrets/ssh_key` + `ssh_key.pub`**: the key Ansible logs in to sensors with. It offers the passphrase-less private keys in `~/.ssh` to copy (or another path), or generates a new ed25519 key. With no usable key in `~/.ssh`, it generates one. It checks that the private and public halves match.
+- **`secrets/gcp-sa.json`** (optional): asks for the path to your downloaded GCP service account key file, rather than having the JSON pasted into the terminal. It checks the file is a service account key, copies it in and sets `GCP_PROJECT_ID` from it. Enter skips it if you only use DigitalOcean.
+- **Permissions**: `.env`, `secrets/`, the private key and the GCP key are made owner-only (`600`/`700`). They hold your cloud credentials.
+- **Starts the deployer**: builds and starts it (`docker compose up -d --build`) if it isn't running, or restarts it when settings or secrets changed. It won't restart the worker while a deploy is running.
+
+On later runs it only prompts for keys missing from `.env` (for example new ones added to `.env.example`), and it never replaces an existing key. Options:
+
+| Option | What it does |
+| :--- | :--- |
+| `--dry-run` | Show what would change without changing or asking anything |
+| `--setup` | Ask the optional questions again: replace the DigitalOcean token, `EDL_ALLOW`, GCP key |
+| `--no-prompt` | Never prompt: use defaults (and `~/tpotce`), generate an SSH key if there is none, fail if something required is missing |
+
+The console is at `https://<hive>:64297/sensors/` behind T-Pot's own login, and linked from the Hive landing page at `https://<hive>:64297/`.
 
 Open **Admin**, click *Verify token* and *Sync options* (DigitalOcean), or set a project id and drop a service account key at `secrets/gcp-sa.json` and click *Test connection* (GCP), then use **Deploy**.
 
 Code is baked into the image, so after any change run `docker compose up -d --build`.
+
+## Behind T-Pot's nginx (default)
+
+The deployer ships no web server or login of its own; it reuses the Hive's. T-Pot's nginx on port `64297` already serves Kibana, the Attack Map and the rest behind a password, and [`tpot-expansion-pack.sh`](tpot-expansion-pack.sh) adds the deployer to it:
+
+| Route | Login | Goes to |
+| :--- | :--- | :--- |
+| `/sensors/` | T-Pot's web login | the deployer UI and API |
+| `/edl/` | none, but only from the addresses in `EDL_ALLOW` | the Palo Alto EDL feed |
+| `/` | T-Pot's web login | the Hive landing page, now with a *Sensor Deployer* link |
+
+What the script does, each step idempotent:
+
+1. Reads `TPOT_HOST_DIR` from `.env`, and `TPOT_DATA_PATH` from T-Pot's own `.env`.
+2. Copies the **stock** `tpotweb.conf` and landing page `index.html` out of the installed T-Pot nginx image, so it always starts from the version you actually run, never from a stale saved copy.
+3. Writes `$TPOT_DATA_PATH/nginx/conf/tpotweb.conf`: the stock server block plus the routes in [`nginx/tpot-location.conf`](nginx/tpot-location.conf), with the upstream set to the Docker bridge IP and `WEB_PORT`, and one `allow` line per `EDL_ALLOW` entry.
+4. Writes `$TPOT_DATA_PATH/nginx/conf/index.html`: the stock landing page with a *Sensor Deployer* link added as the last entry of the tools box.
+5. Adds two read-only bind mounts for those files to the `nginx` service in `$TPOT_HOST_DIR/docker-compose.yml`.
+6. Sets `WEB_BIND` in `.env` to the Docker bridge IP (usually `172.17.0.1`).
+7. Runs `nginx -t` on the new config in a throwaway container **before** changing anything, then recreates T-Pot's nginx (or just reloads it), restarts the deployer if `WEB_BIND` changed, and checks that nginx can reach the deployer, that `/sensors/` asks for a login, and that the landing page has the link. If the running nginx rejects the config, it restores the backups.
+
+Every file it changes is backed up next to itself as `*.bak-<timestamp>`. `--dry-run` shows the diffs without changing anything.
+
+**Re-run it after every T-Pot update.** `update.sh` can replace T-Pot's `docker-compose.yml`, which drops the mounts, and a new release can ship a new stock config or landing page. After a fresh T-Pot install, start T-Pot once, then run the script.
+
+To undo it, remove the two `tpotweb.conf` / `index.html` mount lines from the `nginx` service in `$TPOT_HOST_DIR/docker-compose.yml`, then `sudo systemctl restart tpot`. nginx then falls back to the config and landing page in its image.
+
+### Why it's done this way
+
+These are the things that go wrong if you add the routes by hand:
+
+- **Editing the config inside the nginx container doesn't work.** T-Pot's nginx container is `read_only`, and its `tpotweb.conf` and landing page are baked into the image; nothing mounts them from the host. Edits inside the container fail, and even when they don't, T-Pot recreates every container on each start (`docker compose down` / `up` in `tpot.service`), so they are lost. The only change that sticks is a file on the host mounted over the one in the image.
+- **`proxy_pass http://127.0.0.1:8880` can't reach the deployer.** T-Pot's nginx is on its own Docker network (`tpotce_nginx_local`), not host networking, so `127.0.0.1` inside it is the nginx container itself. It reaches the host through the Docker bridge IP (docker0, usually `172.17.0.1`). That's why `WEB_BIND` publishes the web container there: the port is reachable from containers on the host but not from other machines.
+- **`auth_basic off` alone doesn't open `/edl/`.** T-Pot's server block has `satisfy any; allow 127.0.0.1; deny all;` plus a password, meaning "localhost, or anyone with the password". Turning the password off in `/edl/` leaves only the `deny all`, so the firewall gets `403`. Each address that may fetch the EDL needs its own `allow` line, which `EDL_ALLOW` provides. Prefer your firewall's address over `EDL_ALLOW=all`, since the EDL lists every sensor's IP.
+- **The landing page isn't a host file either.** It's `/var/lib/nginx/html/index.html` inside the image. There is no `data/nginx/conf/index.html` for `install.sh` to create or for you to edit until the script adds one.
+
+## Standalone (without T-Pot's nginx)
+
+To reach the web app directly at `http://<host>:8880/`, swap the `ports:` line of the `web` service in [`docker-compose.yml`](docker-compose.yml) for the commented `0.0.0.0` line under it, don't run `tpot-expansion-pack.sh` (it resets `WEB_BIND` to the bridge IP), and run `docker compose up -d`.
+
+**The app has no login of its own.** Behind T-Pot's nginx, T-Pot's password protects it; standalone, anyone who can reach the port can create and destroy cloud machines on your account and read the EDL. Only publish it where a firewall limits the port to you, or on a trusted network. The deployer still needs `TPOT_HOST_DIR` to register sensors with a Hive either way.
+
+## Hive landing page
+
+T-Pot's splash page at `https://<hive>:64297/` gets a *Sensor Deployer* link in its tools box (next to Attack Map, Kibana, Spiderfoot and the rest). `tpot-expansion-pack.sh` handles it; see [hive-landing-page/README.md](hive-landing-page/README.md).
+
+## Running a Hive without honeypots (optional)
+
+If the Hive host is only a Hive (the sensors in the cloud do the catching), you can stop T-Pot starting its local honeypots and keep the web UI, nginx, Elastic stack, Attack Map and Spiderfoot. Add `profiles: ["honeypots"]` under each honeypot service in `$TPOT_HOST_DIR/docker-compose.yml`. Compose skips a service with a profile unless you ask for that profile, so `tpot.service` starts only the rest. Also include the `tanner*` services (snare's backend). Remove stopped honeypot containers with `docker rm`, or Docker's `restart: always` can start them again at boot.
+
+To start the honeypots again, remove those lines, or run `docker compose --profile honeypots up -d` in `$TPOT_HOST_DIR`. Like the nginx mounts, a T-Pot update can overwrite this. The NSM tools (Suricata, p0f, Fatt) aren't honeypots and keep running either way.
 
 ## Configuration
 
@@ -85,14 +153,22 @@ Set in `.env` (read by Compose):
 | :--- | :--- |
 | `TPOT_HOST_DIR` | **Required.** Host path of the T-Pot install; mounted at `/tpot` |
 | `PUID` / `PGID` / `TPOT_GID` | UID/GID the containers run as; must be able to write `$TPOT_HOST_DIR/data/nginx/conf` and `.env` |
-| `WEB_BIND` / `WEB_PORT` | Published address/port of the web container (default `127.0.0.1:8880`) |
+| `WEB_BIND` / `WEB_PORT` | Published address/port of the web container (default `172.17.0.1:8880`, the Docker bridge; `tpot-expansion-pack.sh` sets `WEB_BIND` to the real bridge IP) |
+| `EDL_ALLOW` | Addresses/CIDRs allowed to fetch `/edl/` without a login, comma-separated (your firewall). Empty means only the Hive itself. Applied by `tpot-expansion-pack.sh` |
 | `SECRETS_HOST_DIR` | Folder mounted read-only at `/secrets` (default `./secrets`) |
-| `DO_TOKEN` | DigitalOcean token (can also be saved from the UI, which stores it in the database) |
 | `GCP_PROJECT_ID` | GCP project id (can also be saved from the UI). Auth is `secrets/gcp-sa.json`, not a token |
 | `TPOT_HIVE_IP` | Public IP/FQDN of the Hive (auto-detected if blank) |
 | `HIVE_ADMIT_WAIT_SECONDS` | How long a deploy waits for the firewall to admit a new sensor to the Hive (default 480) |
 
-Files in `secrets/`: `ssh_key` (private), `ssh_key.pub`, and `gcp-sa.json` (GCP service account key, Compute Admin role). The folder is gitignored.
+Secrets are files in `secrets/`, mounted read-only at `/secrets`, never `.env` variables: those end up in the containers' environment, where `docker inspect` shows them.
+
+| File | What it is |
+| :--- | :--- |
+| `do_token` | DigitalOcean API token (read + write). The only place the app reads it from, on every use, so replacing the file needs no restart. It can't be set from the UI |
+| `ssh_key` / `ssh_key.pub` | Deployer SSH key pair (private key without a passphrase) |
+| `gcp-sa.json` | GCP service account key, Compute Admin role |
+
+`tpot-expansion-pack.sh` creates them and sets their permissions. You can also put them there yourself: `do_token`, `ssh_key` and `gcp-sa.json` should be `600`, and readable by `PUID`. The folder is gitignored and kept out of the image.
 
 All state (SQLite database, settings, logs, EDL file, Terraform state) lives in the `deployer_data` Docker volume at `/data`.
 

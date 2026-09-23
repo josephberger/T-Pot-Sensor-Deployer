@@ -264,22 +264,53 @@ class TestSQLiteDatabase(unittest.TestCase):
         self.assertIsNone(db_get_schedule(sched_id, db_path=self.db_path))
 
 
-    def test_settings_roundtrip_and_env_not_persisted(self):
-        import os
-        from unittest import mock
+    def test_settings_roundtrip(self):
         from app import config
         from app.db import db_get_settings
 
-        with mock.patch.dict(os.environ, {"DO_TOKEN": "env-secret-token"}):
-            cfg = config.save_config({"region": "sfo3", "hive_port": 1234, "bogus": "ignored"})
-            self.assertEqual(cfg["region"], "sfo3")
-            self.assertEqual(cfg["do_token"], "env-secret-token")  # env still applies at load time
+        cfg = config.save_config({"region": "sfo3", "hive_port": 1234, "bogus": "ignored"})
+        self.assertEqual(cfg["region"], "sfo3")
         stored = db_get_settings()
         self.assertEqual(stored["region"], "sfo3")
         self.assertNotIn("bogus", stored)
-        self.assertNotIn("do_token", stored)  # env-derived values are never persisted
         with self.assertRaises(Exception):
             config.save_config({"hive_port": "not-a-number"})
+
+    def test_do_token_only_from_secrets_file(self):
+        import os
+        from unittest import mock
+        from app import config
+        from app.db import db_get_settings, db_save_settings
+        from app.models import SettingsPayload
+
+        token_file = config.DO_TOKEN_PATH
+        self.addCleanup(lambda: token_file.unlink(missing_ok=True))
+        token_file.unlink(missing_ok=True)
+
+        # The environment is no longer a source (env vars show up in `docker inspect`).
+        with mock.patch.dict(os.environ, {"DO_TOKEN": "env-token", "DIGITALOCEAN_TOKEN": "env-token"}):
+            self.assertEqual(config.get_do_token(), "")
+            self.assertEqual(config.load_config()["do_token"], "")
+
+        token_file.write_text("  file-token\n")
+        self.assertEqual(config.get_do_token(), "file-token")  # re-read per call, whitespace stripped
+        cfg = config.load_config()
+        self.assertEqual(cfg["do_token"], "file-token")
+        public = config.public_settings(cfg)
+        self.assertNotIn("do_token", public)
+        self.assertTrue(public["do_token_set"])
+
+        # It can't be set through the settings API or persisted by save_config.
+        self.assertNotIn("do_token", SettingsPayload.model_fields)
+        config.save_config({"do_token": "ui-token", "region": "ams3"})
+        self.assertNotIn("do_token", db_get_settings())
+        self.assertEqual(config.get_do_token(), "file-token")
+
+        # A token an older version stored in the DB is ignored, then purged at startup.
+        db_save_settings({"do_token": "old-db-token"})
+        self.assertEqual(config.load_config()["do_token"], "file-token")
+        config.purge_stored_do_token()
+        self.assertNotIn("do_token", db_get_settings())
 
     def test_sensor_model_saved_to_db(self):
         from app.db import db_save_active_droplet, db_get_active_droplet

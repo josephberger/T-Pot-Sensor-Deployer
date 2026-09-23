@@ -1,78 +1,48 @@
-# Hive landing page (optional)
+# Hive landing page
 
-What T-Pot's own nginx serves at `https://<hive>:64297/` before you log into any of the
-individual tools - the dark "T-Pot" splash page with the particle background and the row of
-link boxes (Attack Map, Kibana, Spiderfoot, ...).
-
-[`index.html`](index.html) here is that page, T-Pot's stock template
-(`docker/nginx/dist/html/index.html` in [telekom-security/tpotce](https://github.com/telekom-security/tpotce))
-with exactly one line added to the tools box:
-
-```diff
-         <a href="/elasticvue/" class="link" target="_blank">Elasticvue</a>
-         <a href="/kibana/" class="link" target="_blank">Kibana</a>
-         <a href="/spiderfoot/" class="link" target="_blank">Spiderfoot</a>
-+        <a href="/sensors/" class="link" target="_blank">Sensor Deployer</a>
-     </div>
-```
-
-That's it - a link to this console, sitting next to T-Pot's other tools instead of being
-something you have to remember the URL for.
-
-## This is not part of the deployer app
-
-It's not served by this project, not referenced by any of its code, and not required for the
-deployer to work - `nginx/tpot-location.conf` (the routing block) is the only nginx change the
-app actually needs. This is purely a cosmetic convenience edit to T-Pot's own landing page, kept
-here so it isn't lost.
-
-## Why it needs to live here at all
-
-T-Pot's nginx container bind-mounts this file **read-only from the host**, from a path under
-T-Pot's persistent data directory:
-
-```yaml
-# tpotce/docker-compose.yml, nginx service
-- ${TPOT_DATA_PATH}/nginx/conf/index.html:/var/lib/nginx/html/index.html:ro
-```
-
-`install.sh` copies T-Pot's stock template into `data/nginx/conf/index.html` exactly once, the
-first time T-Pot is installed. After that it's just a file on disk - nothing regenerates or
-updates it again on its own, including a normal `update.sh`. That cuts both ways: your edit
-survives updates and restarts, but a **fresh install** (new host, reinstalled T-Pot, restored
-from a backup that predates the edit) lays down T-Pot's unmodified stock copy again and quietly
-drops the Sensor Deployer link - with nothing to tell you it happened.
-
-## Applying it
-
-If your T-Pot install is the same version this was taken from (24.04.0) and you haven't
-customized the landing page yourself, just overwrite it - after T-Pot is installed and running:
-
-```bash
-cp hive-landing-page/index.html "$TPOT_HOST_DIR/data/nginx/conf/index.html"
-```
-
-No restart needed - nginx reads the file per request, so it just picks up the moment you
-overwrite it.
-
-If you've made other changes to T-Pot's landing page since this copy was taken, diff first
-rather than overwriting blind:
-
-```bash
-diff "$TPOT_HOST_DIR/data/nginx/conf/index.html" hive-landing-page/index.html
-```
-
-### Newer/different T-Pot version: add just the link
-
-A future T-Pot release can change this template (new tools, a redesign) enough that overwriting
-the whole file would lose those changes. The actual edit is one line - open
-`$TPOT_HOST_DIR/data/nginx/conf/index.html` and find the box of tool links (look for the ones
-already there: Attack Map, Cyberchef, Elasticvue, Kibana, Spiderfoot - a `<div class="... tools-box"
-...>` containing a list of `<a class="link" ...>` tags). Add this line among them, before that
-div's closing `</div>`:
+What T-Pot's own nginx serves at `https://<hive>:64297/` before you open any of the individual
+tools: the dark "T-Pot" splash page with the particle background and the row of link boxes
+(Attack Map, Kibana, Spiderfoot, ...). The deployer adds one link to the tools box:
 
 ```html
 <a href="/sensors/" class="link" target="_blank">Sensor Deployer</a>
 ```
 
-That's the whole change - no other file, script, or restart involved.
+It's cosmetic: the deployer works without it. [`tpot-expansion-pack.sh`](../tpot-expansion-pack.sh)
+applies it along with the nginx routes, so there's nothing to do by hand.
+
+## Where the page lives
+
+The page is baked into T-Pot's nginx image at `/var/lib/nginx/html/index.html`. The container is
+read-only, nothing mounts the page from the host, and there is no `data/nginx/conf/index.html` in
+a stock T-Pot install. Edits made inside the container are lost the next time T-Pot starts, which
+recreates every container.
+
+So the script:
+
+1. copies the stock `index.html` out of the **installed** nginx image, so a newer T-Pot release's
+   page (new tools, a new version number) is kept rather than overwritten by an old saved copy;
+2. adds the link as the last entry of the tools box (the `<div class="link-box tools-box" ...>`),
+   indented like the links above it;
+3. writes the result to `$TPOT_DATA_PATH/nginx/conf/index.html`; and
+4. bind-mounts it over the page in the image, in the `nginx` service of T-Pot's `docker-compose.yml`:
+
+   ```yaml
+   - ${TPOT_DATA_PATH}/nginx/conf/index.html:/var/lib/nginx/html/index.html:ro
+   ```
+
+nginx reads the page per request, so later changes to the file show up without a restart.
+
+## After a T-Pot update or reinstall
+
+A T-Pot update can replace `docker-compose.yml`, which removes the mount, and a fresh install or a
+restore starts without the generated file. Either way the stock page comes back without the link.
+Re-run `./tpot-expansion-pack.sh`. It rebuilds the page from the new stock copy and re-adds the
+mount.
+
+## Customizing it further
+
+The script regenerates the page from stock on every run, so edits made directly to
+`$TPOT_DATA_PATH/nginx/conf/index.html` are overwritten (the previous file is kept as
+`index.html.bak-<timestamp>`). To make other changes, add them to the landing page step in
+`tpot-expansion-pack.sh`.
